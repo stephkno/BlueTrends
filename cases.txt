@@ -1,0 +1,69 @@
+
+        //
+        //
+        // when a user sets a threadgate option
+        // to restrict who can reply to a thread
+        case "app.bsky.feed.threadgate":{
+
+            break;
+        }
+        // when a user sets a postgate option
+        // to restrict who can reply to a post
+        case "app.bsky.feed.postgate":{
+            //console.log("postgate");
+            //console.log(eventdata.commit.record.embeddingRules);
+        }   
+
+
+        case "app.bsky.graph.follow":{
+
+            break;
+        }
+        case "app.bsky.graph.block":{
+
+            break;
+        }
+        case "app.bsky.graph.listitem":{
+
+            break;
+        }
+        case "app.bsky.graph.listblock":{
+
+            break;
+        }
+        case "app.bsky.graph.starterpack":{
+
+            break;
+        }
+        case "app.bsky.graph.list":{
+
+            break;
+        }
+        case "app.bsky.feed.generator":{
+
+            break;
+        }
+        case "jp.5leaf.sync.mastodon":{
+
+            break;
+        }
+        case "chat.bsky.actor.declaration":{
+            
+            break;
+        }
+        case "app.bsky.actor.profile":{
+
+            break;
+        }
+        case "app.example.chatMessage":{
+
+            break;
+        }
+        case "app.example.readReceipt":{
+
+            break;
+        }
+        case "com.whtwnd.blog.entry":{
+            
+            break;
+        }

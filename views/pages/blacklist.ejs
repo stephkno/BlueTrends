@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+    
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script>
+
+function banword(word){
+    console.log(word);
+    $.get(`banword`, {word: word}, function(data, status){
+    });
+}
+function unbanword(word){
+    console.log(word);
+    $.get(`unbanword`, {word: word}, function(data, status){
+    });
+}
+</script>
+</head>
+
+<body>
+
+    Processed <%- events %> events.
+    <% words.forEach(function(word) { %>
+        <br>
+        <a href="javascript:void(0);" onclick="banword('<%= word[0] %>')"><%- word[0] %> - <%- word[1] %></a>
+    <% }) %>
+
+    <p>Ban list:</p>
+    <% bannedwords.forEach(function(word) { %>
+        <br>
+        <a href="javascript:void(0);" onclick="unbanword('<%= word %>')"><%- word %> - <%- word[1] %></a>
+    <% }) %>
+
+</body>
+
+</html>

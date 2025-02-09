@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+    
+<head>
+    <p><a href="/hashtags">Hashtags</a></p>
+</head>
+
+<body>
+
+    Processed <%- events %> events.
+    <% words.forEach(function(word) { %>
+    <br>
+    <%- word[0] %> - <%- word[1] %>
+    <% }) %>
+
+</body>
+
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  
+<head>
+    <style>
+        .well {
+          margin: 2%;
+        }
+    </style>
+    
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <p><a href="/">Users</a></p>
+
+</head>
+
+    <body>
+
+        <div class="container">
+            <h1>Top Hashtags</h1>
+            <h4>Processed <%- events %> posts</h4>
+            <h4><%- n_hashtags %> hashtags</h4>
+            <h4>Last update: <%- last_update %></h4>
+            
+            <% sorted_zscores.forEach(function(zscore) { %>
+
+                <div title="" class="well">
+                    <p>
+                        <%- zscore.hashtag %> : <%- zscore.zscore %>
+                    </p>
+                    
+                </div>
+                
+            <% }) %>
+        </div>
+
+    </body>
+
+</html>

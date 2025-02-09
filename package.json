@@ -1,0 +1,38 @@
+{
+  "dependencies": {
+    "@shippr/supersocket": "^1.0.6",
+    "@skhaz/zstd": "^1.0.21",
+    "axios": "^1.7.9",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "keyword-extractor": "^0.0.28",
+    "lda": "^0.2.0",
+    "mongodb": "^6.12.0",
+    "n-gram": "^2.0.2",
+    "ngram": "^0.0.3",
+    "node-rake": "^1.0.1",
+    "reconnecting": "^4.4.1",
+    "reconnecting-websocket": "^4.4.0",
+    "rocksdb": "^5.2.1",
+    "rws": "^0.0.1",
+    "spacy": "^0.0.4",
+    "spacy-js": "^0.0.5",
+    "spacy-nlp": "^1.0.11",
+    "stopword": "^3.1.4",
+    "supersocket": "^1.0.0",
+    "websocket": "^1.0.35",
+    "wordpos": "^2.1.0",
+    "ws": "^8.18.0",
+    "zstd-napi": "^0.0.8"
+  },
+  "name": "bluesky",
+  "version": "1.0.0",
+  "main": "jetstream.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "type": "module"
+}

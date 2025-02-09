@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  
+<head>
+    <style>
+        .well {
+          margin: 2%;
+        }
+    </style>
+    
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <p><a href="/">Users</a></p>
+
+</head>
+
+    <body>
+
+        <div class="container">
+            <h1>Top Posts</h1>
+            <h4>Processed <%- events %> posts.</h4>
+            <p>In <%- res_time %> milliseconds.</p>
+            <p><%- dict_size %> bytes </p>
+            
+            <% candidate_posts.forEach(function(post) { %>
+
+                <div title="<%=JSON.stringify(post, null, '')%>" class="well">
+                    <p>
+                        <% if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt == "" ){ %>
+                        <p>[Image]</p>
+                        <% }else if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
+                        <p>[Image Desc: <%- post.embed.images[0].alt %>]</p>
+                        <% } %>
+                        <%- post.text %> 
+                        <p><a href="<%- post.post_url %>" target="_blank">View post</a></p>
+
+                        <p>Posted at <%- post.createdAt %></p>
+                        <p>Posted by  </p>
+                        <p><%- post.likes %> likes, <%- post.reposts %> reposts</p>
+                        <!--<p> Deleted: <%- post.deleted %></p>-->
+                    </p>
+                    
+                </div>
+                
+            <% }) %>
+        </div>
+
+    </body>
+
+</html>
