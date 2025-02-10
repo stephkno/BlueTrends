@@ -2,17 +2,53 @@
 <html lang="en">
   
 <head>
+    
+    <title>SkyTrends</title>
 
-
+    <!--Meta-->
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    
+    <!--Bootstrap import-->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
 
+    <!--Bootstrap toggle-->
+    <link href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css" rel="stylesheet">
+<script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
+
+    <!--Dark mode toggle-->
+    <style>
+        .adult {
+            display: none;
+        }
+    </style>
+<script>
+    function Darkmode(toggle) {
+        if (toggle.checked) {
+            //alert ("Darkmode On");
+        } else {
+            //alert ("Darkmode Off");
+        }
+    }
+</script>
+<script>
+    function HideshowAdultContent(toggle){
+        var divsToHide = document.getElementsByClassName("adult"); //divsToHide is an array
+        for(var i = 0; i < divsToHide.length; i++){
+            if(toggle.checked){
+                divsToHide[i].style.display = "none"; // depending on what you're doing
+            }else{
+                divsToHide[i].style.display = "block"; // depending on what you're doing
+            }
+        }
+    }
+</script>
 </head>
 
-    <body>
+    <body data-bs-theme="dark">
+        <!--Top navbar-->
         <nav class="navbar navbar-inverse navbar-fixed-top">
             
             <div class="container-fluid">
@@ -22,97 +58,161 @@
                 <ul class="nav navbar-nav">
                     <li class="active"><a href="#">Home</a></li>
                     <li><a href="#"></a></li>
+                    <input type="checkbox" checked data-toggle="toggle" data-on="Light" data-off="Dark" onchange="Darkmode(this)">
+                    <input type="checkbox" checked data-toggle="toggle" data-on="Hide NSFW" data-off="Show NSFW" onchange="HideshowAdultContent(this)">
                 </ul>
             </div>
         </nav>
-            
+
+        <!--Title section-->
         <div class="container" style="margin-top:50px">
             <section>
-            <h1>Top Posts</h1>
-            <h4><%- n_events %> events processed in <%- res_time %> ms</h4>
+
+                <% const timeZoneString = Intl.DateTimeFormat().resolvedOptions().timeZone %>
+                <%  let options = {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
+                        timeZone: timeZoneString
+                    };
+                %>
+                <% let formatter = new Intl.DateTimeFormat('en-US', options); %>
+                <% let start_time = formatter.format(server_start_time); %>
+
+
             </section>
+            <h1>Trending on BlueSky</h1>
 
-            <div class="row">
-                <div class="col-sm-8" style="background-color:rgb(255, 255, 255);">
-                    
-                    <% let i = 0; %>
-                    <% posts.forEach(function(post_tier_data) { %>
+            <!--Main section-->
+            <section>
+                <div class="row">
+                    <div class="col-sm-8">
                         
-                        <div title="<%=JSON.stringify(post_data[i], null, '')%>" class="well">
+                        <!--Each post-->
+                        <% let i = 0; %>
+                        <% posts.forEach(function(post_tier_data) { %>
+
                             <% let post = post_data[i]; %>
+                            <% if (post==null){ return; } %>
 
-                            <% if(post){ %>
-                                <div><%- post.did %></div>
-
-                            <br>
-                                <% if(post.embed && post.embed.images &&
-                                 post.embed.images.length > 0 && 
-                                 post.embed.images[0].alt == "" ){ %>
-                                    <p>[Image]</p>
-                                <% }else if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
-                                    <p>[Image Desc: <%- post.embed.images[0].alt %>]</p>
-                                <% }else if(post.embed && post.embed.video){ %>
-                                    [Video]
+                            <!--Post json hover (debug)-->
+                            <div title="<%=JSON.stringify(post, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <!--<div title="<%=JSON.stringify(post_tier_data.engagement_score, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
+         
+                                <!--NSFW Content warning-->
+                                <% if(post.nsfw){ %>
+                                    <p class="text-danger">🔞 Adult Content</p>
                                 <% } %>
 
-                                <div><%- post_data[i].text %></div>
+                                <!--Main post text-->
+                                <% if(post.text!=""){ %>
+                                    <div><%- post.text %></div>
+                                    <br>
+                                <% } %>
 
-                            <% } %>
-             
-                            <br>
+                                <!--Handle image items in post-->
+                                <% if(post.embed && post.embed.images && post.embed.images.length > 0){ %>
+                                    
+                                    <p>[Image]</p>
 
-                            <% let dateObj = new Date(post_tier_data.postedAt / 1000); %>
-                            <% const zone = Intl.DateTimeFormat().resolvedOptions().timeZone %>
-                            <%  let options = {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: true,
-                                timeZone: zone
-                            };
-                            %>
-                            <% let formatter = new Intl.DateTimeFormat('en-US', options); %>
-                            <% let utc = formatter.format(dateObj); %>
+                                <!--Handle image description items in post-->
+                                <% }if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
+                                    <p>(<%- post.embed.images[0].alt %>)</p>
+                                        
+                                <!--Handle video description in post-->
+                                <% }else if(post.embed && post.embed.video){ %>
+                                    <p>[Video]</p>
 
-                            <div>Likes: <%- post_tier_data.likes %> Reposts: <%- post_tier_data.reposts %></div>
-                            <div>Posted at: <%- utc %> - <%- zone %></div>
-                            <div>
+                                <!--Handle external url description in post-->
+                                <% }else if(post.embed && post.embed.external){ %>
+                                    <a href="<%- post.embed.external.uri %>"><%-post.embed.external.title%></a>
+                                    <p><%-post.embed.external.description %>
+                                    </p>
+                                    <br>
+                                <% } %>
+
+                                <!--Post data text-->
+                                <div><%- post.did %></div>
+
+                                <!--Convert timestamp to local time string-->
+                                <% let dateObj = new Date(post_tier_data.postedAt / 1000); %>
+                                <% const timeZoneString = Intl.DateTimeFormat().resolvedOptions().timeZone %>
+                                <%  let options = {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        hour12: true,
+                                        timeZone: timeZoneString
+                                    };
+                                %>
+                                <% let formatter = new Intl.DateTimeFormat('en-US', options); %>
+                                <% let utc = formatter.format(dateObj); %>
+
+                                <!--Likes reposts and time-->
+                                <b><div>Likes: <%- post_tier_data.likes %> | Reposts: <%- post_tier_data.reposts %></div></b>
+                                <div><%- utc %></div>
+                                <div>
+
+                                <!--Tier place and trend direction-->
+                                #<%- i+1 %>
+                                <% if(post_tier_data.movement_direction > 0){ %>
+                                    ⬆️
+                                <% }else if(post_tier_data.movement_direction < 0) { %>
+                                    ⬇️
+                                <% } %>
+
+                                <!--Link to bluesky post-->
+                                <a href="<%- post.post_url %>" target="_blank">Original</a>
                                 
-                            Language: <%- post_data[i].langs %>
+                                <!--Non English language-->
+                                <% if(post.langs != "en"){ %>
+                                - <%- post.langs %>
+                                <% } %>
+                            
+                                </div>
 
-                            #<%- i+1 %>
-                            <% if(post_tier_data.d_score > 0){ %>
-                                ⬆️
-                            <% }else{ %>
-                                ⬇️
-                            <% } %>
-                            <a href="<%- post.post_url %>" target="_blank">Read original post</a>
-                        
+                
                             </div>
+                            
+                            <!--Post counter-->
+                            <% i++; %>
 
-                            <% if(post_data[i].nsfw){ %>
-                                NSFW❌
+                        <% }) %>
+
+                    </div>
+
+                    <!--Trend data side column-->
+                    <div class="col-sm-4" style="background-color:rgb(255, 255, 255);">
+                        
+                        <div class="well">
+                            <h4>Debug data</h4>
+                            <h5><%- n_posts_received %> posts</h5>
+                            <h5><%- db_insertions %> posts in DB</h5>
+                            <h5><%- db_insertion_misses %> missed posts</h5>
+                            <% let posts_behind = n_posts_received-db_insertions %>
+                            <% if(posts_behind>100){ %>
+                            <%    posts_behind -= 100; %>
+                            <% }else{ %>
+                            <%    posts_behind = 0; %>
                             <% } %>
+
+                            <h5><%- posts_behind %> posts behind</h5>
+
+                            <h5>Last updated: <%- (now-last_update)/1000 %> s ago</h5>
+                            <h5>Server started at: <%- start_time %></h5>
 
                         </div>
                         
-                        <% i++; %>
-
-                    <% }) %>
-
-                </div>
-
-                <div class="col-sm-4" style="background-color:rgb(255, 255, 255);">
-                    
-                    <div class="well">
-                    
-                        <p>test column two</p>
-                    
                     </div>
 
                 </div>
+
+            </section>
 
             </div>
 

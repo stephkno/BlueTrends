@@ -15,11 +15,10 @@ export {
     UpdatePostPosition
 };
 
-
 function calculatePostEngagementScore(post) {
 
     const likesWeight = 1;
-    const repostsWeight = 2;
+    const repostsWeight = 1;
     //const commentsWeight = 3;
     const timeDecayFactor = 0.9; // Adjust this factor based on how quickly you want scores to decay
 
@@ -29,8 +28,6 @@ function calculatePostEngagementScore(post) {
     const weightedLikes = post.likes * likesWeight;
     const weightedReposts = post.reposts * repostsWeight;
 
-
-
     const score = (weightedLikes
                    + weightedReposts
                    //+ post.comments * commentsWeight)
@@ -38,8 +35,6 @@ function calculatePostEngagementScore(post) {
     
     // get change in post score
     const d_score = score - post.engagement_score;
-
-    // set new score
     post.engagement_score = score;
 
     return d_score;
@@ -58,6 +53,8 @@ function UpdatePostPosition(post, d_score, idx){
         while(new_idx >= 0 && post.engagement_score > post_tier[new_idx].engagement_score){
 
             // swap posts
+            // new_idx+1 moving up
+            // new_idx moving down
             let tmp = post_tier[new_idx+1];
             post_tier[new_idx+1] = post_tier[new_idx];
             post_tier[new_idx] = tmp;
@@ -65,12 +62,14 @@ function UpdatePostPosition(post, d_score, idx){
             post_index_dictionary[post.uri] = new_idx;
             post_index_dictionary[post_tier[new_idx+1].uri] = new_idx+1;
 
+            post_tier[new_idx+1].movement_direction = -1;
+            post_tier[new_idx].movement_direction = 1;
+
             // don't decrement index if we found place at 0
             if(new_idx != 0){
                 new_idx--;
             }
         }
-
         // update index in post index dictionary
 
     }
@@ -90,17 +89,15 @@ function UpdatePostPosition(post, d_score, idx){
             // update index in post index dictionary
             post_index_dictionary[post.uri] = new_idx;
             post_index_dictionary[post_tier[new_idx-1].uri] = new_idx-1;
-            
+
+            post_tier[new_idx-1].movement_direction = 1;
+            post_tier[new_idx].movement_direction = -1;
+
             if(new_idx != post_tier.length){
                 new_idx++;
             }
         }
-
     }
-
-    // save post d_score in post 
-    post.d_score = d_score;
-
 }
 
 const mongo_uri = "mongodb://localhost:27017?connectTimeoutMS=6000000";
@@ -110,6 +107,8 @@ async function init_db(){
     await mongo_client.connect();
     await mongo_client.db("bluesky_data").command({"drop":"posts"});
     await mongo_client.db("bluesky_data").createCollection("posts");
+    await mongo_client.db("bluesky_data").collection("posts").createIndex({ _id:1 })
+    //console.log(await mongo_client.db("bluesky_data").collection("posts").indexes());
 }
 
 async function close_db(){
@@ -119,7 +118,6 @@ async function close_db(){
 function get_db(){
     return mongo_client.db("bluesky_data");
 }
-
 
 const get_current_timestamp = () => {
     const now = Date.now();

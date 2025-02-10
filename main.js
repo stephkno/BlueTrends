@@ -6,6 +6,8 @@ import ReconnectingWebSocket from 'rws';
 import * as helper from './helper.js';
 import { post_index_dictionary, post_tier } from "./data.js";
 
+import { ObjectId } from 'mongodb';
+
 const app = express();
 const port = 8080;
 
@@ -27,13 +29,116 @@ const db = helper.get_db();
 const post_collection = db.collection("posts");
 
 // events counter
-var n_events = 0;
+var n_posts_received = 0;
+var db_insertions = 0;
+var db_insertion_misses = 0;
 var post_serial_id = 0;
 let last_timestamp = 0;
 let last_post_processed_time = 0;
+const items_per_page = 42;
+let update_queue = [];
+const N_MAX_BULK_WRITE = 100;
+let current_top_posts = [];
+let last_update = 0;
+let server_start_time = 0;
+
+// todo list
+// fix mongodb insert error
+
+// get usernames from did
+// handle deletes of likes and reposts
+
+// handle comments and replies
+// remove low rated posts
+// - that have negative engagement score?
+// - that are too old?
+
+// topic summary
+// hashtag section
+// nsfw hide switch
+// dark mode
+// auto dark mode
+// image thumbnails
+// links / link previews?
+// avatars?
+// friendly usernames?
+
+// bulkwrite process lock
+let BulkWriteInProcess = false;
+
+// process bulkwrite for last 100 items in buffer
+// occasionally getting error
+// Bulkwrite error: MongoBulkWriteError: An empty update path is not valid.
+// not sure how that will impact app in future
+function ProcessBulkWrite(){
+
+    // lock from other events if bulkwrite in process
+    if(BulkWriteInProcess){
+        return;
+    }
+
+    // update if queue is long enough
+    if(update_queue.length >= N_MAX_BULK_WRITE){
+        //console.log("Begin bulk write DB " + update_queue.length);
+        //console.log("BulkWrite");
+
+        // lock function
+        BulkWriteInProcess = true;
+
+        // get top 100 items from buffer
+        let updates = update_queue.splice(0,N_MAX_BULK_WRITE);
+
+        if(updates.length < 1){
+            console.log("Bulkwrite error: Empty Bulkwrite buffer");
+            BulkWriteInProcess = false;
+            return;
+        }
+
+        updates.forEach(item => {
+            if(item.uri == ""){
+                console.log("Bulkwrite error: Empty URI");
+            }
+        })
+
+        // write them to mongodb
+        post_collection.bulkWrite(updates).then(result => {
+
+            // count successful insertions
+            db_insertions += result.upsertedCount;
+
+            // unlock
+            BulkWriteInProcess = false;
+
+        }).catch(err => {
+
+            console.log("Bulkwrite error: " + err);
+            console.log("Attempting single inserts");
+
+            // attempt to insert single items
+            updates.forEach(update => {
+                post_collection.insertOne(update).then(() => {
+                    
+                    db_insertions++;
+                
+                }).catch(err => {
+                    
+                    db_insertion_misses ++;
+                    console.log("Bulkwrite error: Error writing single item: " + err);
+                    console.log(update);
+
+                })
+            });
+
+            BulkWriteInProcess = false;
+        
+        });
+        
+        
+    }
+}
 
 // on jetstream receive message event
-ws.onmessage = function(event){
+ws.onmessage = async function(event){
 
     const eventdata = JSON.parse(event.data);//JSON.parse(dec.decompress(event.data).toString());
     
@@ -89,8 +194,6 @@ ws.onmessage = function(event){
             post._id = uri;
             post.did = eventdata.did;
             post.timestamp = eventdata.time_us;
-            post.likes = 0;
-            post.reposts = 0;
             post.post_url = post_url;
             post.deleted = false;
             post.author = "[Pending...]";
@@ -102,45 +205,47 @@ ws.onmessage = function(event){
                 if(label_filters.includes(eventdata.commit.record.labels.values[0].val)){
                     post.nsfw = true;
                 }else{
-                    console.log("Unrecognized filter");
-                    console.log(eventdata.commit.record.labels);
+                    //console.log("Unrecognized filter");
+                    //console.log(eventdata.commit.record.labels);
                 }
 
             }
             
-            // insert post index in tier list
-            post_index_dictionary[uri] = post_tier.length;
-            
-            // insert post data into last place in memory
-            post_tier.push({
-                uri,
-                post_url,
-                createdAt: Date.now(),
-                postedAt: eventdata.time_us,
-                likes: 0,
-                reposts: 0,
-                engagement_score: 0,
-                d_score: 0
-            });
-            
-            // insert post data into mongodb collection
-            post_collection.updateOne(
-                { _id: uri },
-                { $setOnInsert: post },
-                { upsert: true }
-              ).then(result => {
-                if (result.upsertedCount === 1) {
-                  //console.log("Inserted document with _id: " + uri);
-                } else {
-                  console.log("Duplicate key: " + uri);
-                }
-              }).catch(err => {
-                console.log(err);
-              });
-            
+            if(uri == ""){
+                console.log("Attempted to push an empty uri string");
+            }else{
 
+                // insert post index in tier list
+                post_index_dictionary[uri] = post_tier.length;
+                
+                // insert post data into last place in memory
+                post_tier.push({
+                    uri,
+                    post_url,
+                    createdAt: Date.now(),
+                    postedAt: eventdata.time_us,
+                    likes: 0,
+                    reposts: 0,
+                    engagement_score: 0,
+                    movement_direction: 0
+                });
+
+                // insert post data into mongodb collection
+                update_queue.push({
+                    updateOne: {
+                        filter: { _id: uri },
+                        update: { $setOnInsert: post },
+                        upsert: true 
+                    }
+                });
+            
+            }
+            
             post_serial_id++;
-            n_events++;
+            n_posts_received++;
+            
+            ProcessBulkWrite();
+            
             break;
 
         }
@@ -202,83 +307,145 @@ ws.onmessage = function(event){
         // to restrict who can reply to a post
         case "app.bsky.feed.postgate":{
             // what does this do?            
+            
         }
 
         default:{
-            console.log("Unrecognized event: " + eventdata.commit.collection);
+
+            //console.log("Unrecognized event: " + eventdata.commit.collection);
             break;
+        
         }
     }
-    
+
     return;
 
 };
 
-// Index route
+// update top tier list, should happen as often as possible
+async function UpdateTopList(){
+    
+    // create new promise to wait for query and sort to complete
+    return new Promise(async (resolve, reject) => {
+
+        //console.log("Begin Update of Top List");
+        //console.log("Slicing top posts");
+
+        // return top 25 posts from post_tier list
+        //if(req.query.reverse){
+        //    var posts = post_tier.slice(post_tier.length-items_per_page,post_tier.length);
+        //}else{
+        var posts = post_tier.slice(0,items_per_page);
+        //}
+
+        //console.log("Mapping post uris");
+        let post_uris = posts.map( post => { return post.uri } );
+        
+        //console.log("Querying db");
+
+        // return post data from mongodb
+        const post_data_query_results = await post_collection.find(
+            {
+                _id: { $in: post_uris }
+            }
+        );
+        let post_data = await post_data_query_results.toArray();
+    //    const post_query_explain = await post_data_query_results.explain();
+
+        //console.log("Sorting results db");
+
+        // Sort resulting items from mongodb query
+
+        // create dictionary of post with id as key
+        let post_data_lookup = {};
+        post_data.map(post => {
+            post_data_lookup[post._id] = post;
+        })
+
+        // return list of posts by order of id in original list
+        current_top_posts = post_uris.map(post_uri => post_data_lookup[post_uri]).filter(doc => doc != undefined);
+        
+        //console.log(current_top_posts);
+
+        // get author username from bsky api
+        // for each item which has null authorname fetch author name by did
+        /*
+        helper.get_user_handle(eventdata.did).then(
+            result => {
+            }
+        ).catch(
+            error => {
+                console.log(error);
+            }
+        );
+        */
+
+        resolve(0);
+
+    });
+
+}
+
+// run async chain to update top tier list forever
+function StartUpdateTopList(){
+
+    setTimeout( () => {
+        
+        //console.log("Updating top tier list");
+
+        // Keep updating top list forever
+        UpdateTopList().then(result => {
+            // setTimeOut
+            last_update = Date.now();
+            StartUpdateTopList();
+        })
+    
+    }, 10000);
+
+}
+
+// init async chain
+StartUpdateTopList();
+
+// Serve index route
 app.get('/', async (req, res) => {
 
     console.log("Request");
     const start_time = Date.now();
-
-    // return top 25 posts from post_tier list
-    if(req.query.reverse){
-        var posts = post_tier.slice(post_tier.length-42,post_tier.length);
-    }else{
-        var posts = post_tier.slice(0,42);
-    }
     
-    let post_uris = posts.map( post => { return post.uri } );
-    
-    // return post data from mongodb
-    // aggregate results by id in list
-    // return items from collection in order of ids
-    const post_data = await post_collection.aggregate([
-        // match ids from list
-        { $match: { _id: { $in: post_uris } } },
-        // add field to results for id's index in array
-        { $addFields: { sortOrder: { $indexOfArray: [post_uris, "$_id"] } } },
-        // set result sort order to descending
-        { $sort: { sortOrder: 1 } },
-        // removes the order field from the documents (??)
-        { $project: { sortOrder: 0 } }
-      ]).toArray();
-
-
-    // get author username from bsky api
-    // for each item which has null authorname fetch author name by did
-    /*
-    helper.get_user_handle(eventdata.did).then(
-        result => {
-        }
-    ).catch(
-        error => {
-            console.log(error);
-        }
-    );
-    */
+    console.log("Returning " + current_top_posts.length + " posts");
 
     const res_time = Date.now() - start_time;
     console.log("Done");
+    
+    var posts = post_tier.slice(0,items_per_page);
 
     res.render("pages/index",
         {
-            posts: posts,
-            post_data: post_data,
-            n_events,
-            res_time: res_time,
+            posts,
+            post_data: current_top_posts,
+            n_posts_received,
+            db_insertions,
+            db_insertion_misses,
+            last_update,
+            now: Date.now(),
+            res_time,
+            server_start_time
         }
     );
 
 });
 
+// try to close db cleanly on exit
 function cleanup(){
     helper.close_db();
 }
-
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
-// Start the server
+server_start_time = Date.now();
+
+// Start the express server
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
