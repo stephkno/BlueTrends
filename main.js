@@ -4,9 +4,7 @@ import * as fs from 'fs';
 import ReconnectingWebSocket from 'rws';
 
 import * as helper from './helper.js';
-import { post_index_dictionary, post_tier } from "./data.js";
-
-import { ObjectId } from 'mongodb';
+import { post_index_dictionary, post_tier, deleted_post_dids } from "./data.js";
 
 const app = express();
 const port = 8080;
@@ -30,7 +28,6 @@ const post_collection = db.collection("posts");
 
 // events counter
 var n_posts_received = 0;
-var n_posts_total = 0;
 var db_insertions = 0;
 var db_insertion_misses = 0;
 var post_serial_id = 0;
@@ -42,7 +39,7 @@ const N_MAX_BULK_WRITE = 100;
 let current_top_posts = [];
 let last_update = 0;
 let server_start_time = 0;
-let deleted_post_dids = {};
+var n_posts_total = 0;
 
 // todo list
 // fix mongodb insert error
@@ -222,53 +219,56 @@ ws.onmessage = async function(event){
                 }
 
             }
+
             
-            if(uri == ""){
-                console.log("Attempted to push an empty uri string");
-            }else{
-
-                // insert post index in tier list
-                post_index_dictionary[uri] = post_tier.length;
-                
-                // insert post data into last place in memory
-                post_tier.push({
-                    uri,
-                    post_url,
-                    createdAt: Date.now(),
-                    postedAt: eventdata.time_us,
-                    likes: 0,
-                    reposts: 0,
-                    engagement_score: 0,
-                    movement_direction: 0
-                });
-
-                // insert post data into mongodb collection
-                /*
-                update_queue.push({
-                    updateOne: {
-                        filter: { _id: uri },
-                        update: { $setOnInsert: post },
-                        upsert: true 
-                    }
-                });
-                */
-
-                post_collection.updateOne(
-                    { _id: uri },
-                    { $set: post },
-                    { upsert: true}
-                ).then(res => {
-                    
-                    db_insertions++;
-
-                }).catch(res => {
-                    console.log("Err: " + res);
-                    console.log(uri);
-                    console.log(post);
-                });
-            
+            // insert post data into last place in memory before any negative values
+            let insert_idx = post_tier.length-1;
+            while(insert_idx >= 0 && post_tier[insert_idx].engagement_score <= 0){
+                insert_idx--;
             }
-            
+            if(insert_idx < 0){
+                insert_idx = 0;
+            }
+
+            post_tier.splice(insert_idx, 0, {
+                uri,
+                post_url,
+                createdAt: Date.now(),
+                postedAt: eventdata.time_us,
+                likes: 0,
+                reposts: 0,
+                engagement_score: 0,
+                movement_direction: 0
+            });
+
+            // insert post index in tier list
+            post_index_dictionary[uri] = insert_idx;
+
+            // insert post data into mongodb collection
+            /*
+            update_queue.push({
+                updateOne: {
+                    filter: { _id: uri },
+                    update: { $setOnInsert: post },
+                    upsert: true 
+                }
+            });
+            */
+
+            post_collection.updateOne(
+                { _id: uri },
+                { $set: post },
+                { upsert: true}
+            ).then(res => {
+                
+                db_insertions++;
+
+            }).catch(res => {
+                console.log("Err: " + res);
+                console.log(uri);
+                console.log(post);
+            });
+        
             post_serial_id++;
             n_posts_received++;
             n_posts_total++;
@@ -362,41 +362,43 @@ async function UpdateTopList(){
     
     // create new promise to wait for query and sort to complete
     return new Promise(async (resolve, reject) => {
-
+/*
+        let x = 0
+        while(x<=post_tier.length-1){
+            console.log("Post idx: " + x + " Post score: " + post_tier[x].engagement_score);
+            x++;
+        }
+        console.log("Last item: " + post_tier[post_tier.length-1].engagement_score)
+*/
         let n_posts_removed = 0;
-
+    
         // remove all posts from tail of list with score < 0
         while(post_tier[post_tier.length-1].engagement_score < 0){
             
-            console.log("Delete post");
             // save index of post to be deleted
             const i = post_tier.length-1;
-
+    
             // remove last post from post_tier
             let deleted_post = post_tier.pop();
-
+    
             // add deleted post did to dictionary
             deleted_post_dids[deleted_post._id] = 0;
-
+    
             // remove post index from dictionary
             delete post_index_dictionary[i];
             
             // remove post from main mongodb collection
             // todo
-
+    
             // count number removed posts
             n_posts_removed++;
-
+    
         }
         if(n_posts_removed > 0){
-
             console.log("Removed " + n_posts_removed + " posts from tier list tail.")
             n_posts_total -= n_posts_removed;
-        
         }
-        
-        // decrease total post count
-        
+
         //console.log("Begin Update of Top List");
         //console.log("Slicing top posts");
 
