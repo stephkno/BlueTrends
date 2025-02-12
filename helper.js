@@ -15,7 +15,15 @@ export {
     UpdatePostPosition
 };
 
-function calculatePostEngagementScore(post) {
+function calculatePostEngagementScore(post, idx) {
+
+    // don't handle post which has already been marked for removal
+    if(post.engagement_score < 0){
+        return -1;
+    }
+
+    const MAX_POST_POSITION = 1000;
+    const MAX_POST_AGE = 60; // 5 hours
 
     const likesWeight = 1;
     const repostsWeight = 1;
@@ -28,23 +36,38 @@ function calculatePostEngagementScore(post) {
     const weightedLikes = post.likes * likesWeight;
     const weightedReposts = post.reposts * repostsWeight;
 
-    const score = (weightedLikes
-                   + weightedReposts
-                   //+ post.comments * commentsWeight)
-                    ) * timeDecay;
+    let score = 0;
+    let d_score = 0;
+
+    if( timeSincePost > MAX_POST_AGE && idx > MAX_POST_POSITION ){
+        
+        // mark post for removal
+        // should cause post to sink to bottom of tier list
+        score = -1;
+
+    }else{
+        score = (weightedLikes
+            + weightedReposts
+            //+ post.comments * commentsWeight)
+        ) * timeDecay;
     
+    }
+
     // get change in post score
-    const d_score = score - post.engagement_score;
+    d_score = score - post.engagement_score;
     post.engagement_score = score;
+
+    // if post is older than 5 hours maybe change its engagement score to -1
+    // then scan all posts from end of list backwards and delete all with score < 0
 
     return d_score;
 }
 
+// update position of post in tierlist based on its new engagement score
 function UpdatePostPosition(post, d_score, idx){
 
     // update engagement score for post using calculateEngagentScore func
     // if score increased move up list
-
     if(d_score > 0){
 
         let new_idx = idx-1;
@@ -59,6 +82,7 @@ function UpdatePostPosition(post, d_score, idx){
             post_tier[new_idx+1] = post_tier[new_idx];
             post_tier[new_idx] = tmp;
 
+            // update index in post index dictionary
             post_index_dictionary[post.uri] = new_idx;
             post_index_dictionary[post_tier[new_idx+1].uri] = new_idx+1;
 
@@ -70,7 +94,6 @@ function UpdatePostPosition(post, d_score, idx){
                 new_idx--;
             }
         }
-        // update index in post index dictionary
 
     }
     // score decreased, move down list
@@ -79,8 +102,8 @@ function UpdatePostPosition(post, d_score, idx){
         let new_idx = idx+1;
 
         // move up list until new place is found
-        while(post.engagement_score < post_tier[new_idx].engagement_score && new_idx < post_tier.length){
-            
+        while(post.engagement_score < post_tier[new_idx].engagement_score && new_idx < post_tier.length-1){
+        
             // swap posts
             let tmp = post_tier[new_idx-1];
             post_tier[new_idx-1] = post_tier[new_idx];
@@ -96,7 +119,9 @@ function UpdatePostPosition(post, d_score, idx){
             if(new_idx != post_tier.length){
                 new_idx++;
             }
+
         }
+
     }
 }
 

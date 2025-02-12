@@ -30,6 +30,7 @@ const post_collection = db.collection("posts");
 
 // events counter
 var n_posts_received = 0;
+var n_posts_total = 0;
 var db_insertions = 0;
 var db_insertion_misses = 0;
 var post_serial_id = 0;
@@ -41,6 +42,7 @@ const N_MAX_BULK_WRITE = 100;
 let current_top_posts = [];
 let last_update = 0;
 let server_start_time = 0;
+let deleted_post_dids = {};
 
 // todo list
 // fix mongodb insert error
@@ -70,7 +72,7 @@ let BulkWriteInProcess = false;
 // occasionally getting error
 // Bulkwrite error: MongoBulkWriteError: An empty update path is not valid.
 // not sure how that will impact app in future
-function ProcessBulkWrite(){
+async function ProcessBulkWrite(){
 
     // lock from other events if bulkwrite in process
     if(BulkWriteInProcess){
@@ -88,7 +90,7 @@ function ProcessBulkWrite(){
         // get top 100 items from buffer
         let updates = update_queue.splice(0,N_MAX_BULK_WRITE);
 
-        if(updates.length < 1){
+        if(updates.length == 0){
             console.log("Bulkwrite error: Empty Bulkwrite buffer");
             BulkWriteInProcess = false;
             return;
@@ -101,7 +103,7 @@ function ProcessBulkWrite(){
         })
 
         // write them to mongodb
-        post_collection.bulkWrite(updates).then(result => {
+        await post_collection.bulkWrite(updates).then(result => {
 
             // count successful insertions
             db_insertions += result.upsertedCount;
@@ -109,17 +111,21 @@ function ProcessBulkWrite(){
             // unlock
             BulkWriteInProcess = false;
 
-        }).catch(err => {
+        }).catch(async err => {
 
             console.log("Bulkwrite error: " + err);
             console.log("Attempting single inserts");
+            console.log("N_updates: " + updates.length);
+
+            var single_inserts = 0;
 
             // attempt to insert single items
-            updates.forEach(update => {
-                post_collection.insertOne(update).then(() => {
+            await Promise.all(updates.map(async update => {
+                await post_collection.insertOne(update).then(res => {
                     
                     db_insertions++;
-                
+                    single_inserts++;
+
                 }).catch(err => {
                     
                     db_insertion_misses ++;
@@ -127,8 +133,9 @@ function ProcessBulkWrite(){
                     console.log(update);
 
                 })
-            });
+            }));
 
+            console.log("Inserted " + single_inserts + " items individually");
             BulkWriteInProcess = false;
         
         });
@@ -169,10 +176,10 @@ ws.onmessage = async function(event){
     }
 
     switch(eventdata.commit.collection){
+
         // when a user creates a new thread
         case "app.bsky.feed.post":{
             
-
             const uri = 
             "at://" 
             + eventdata.did
@@ -191,6 +198,10 @@ ws.onmessage = async function(event){
             const size = Buffer.byteLength(JSON.stringify(eventdata))
 
             var post = eventdata.commit.record;
+
+            // remove mysterious empty key item from post json
+            delete post[''];
+
             post._id = uri;
             post.did = eventdata.did;
             post.timestamp = eventdata.time_us;
@@ -198,6 +209,7 @@ ws.onmessage = async function(event){
             post.deleted = false;
             post.author = "[Pending...]";
             post.nsfw = false;
+
 
             // attempt to label nsfw posts
             if(eventdata.commit.record.labels &&eventdata.commit.record.labels.values.length>0){
@@ -231,6 +243,7 @@ ws.onmessage = async function(event){
                 });
 
                 // insert post data into mongodb collection
+                /*
                 update_queue.push({
                     updateOne: {
                         filter: { _id: uri },
@@ -238,13 +251,29 @@ ws.onmessage = async function(event){
                         upsert: true 
                     }
                 });
+                */
+
+                post_collection.updateOne(
+                    { _id: uri },
+                    { $set: post },
+                    { upsert: true}
+                ).then(res => {
+                    
+                    db_insertions++;
+
+                }).catch(res => {
+                    console.log("Err: " + res);
+                    console.log(uri);
+                    console.log(post);
+                });
             
             }
             
             post_serial_id++;
             n_posts_received++;
+            n_posts_total++;
             
-            ProcessBulkWrite();
+            //ProcessBulkWrite();
             
             break;
 
@@ -256,7 +285,8 @@ ws.onmessage = async function(event){
             const uri = eventdata.commit.record.subject.uri;
 
             // get post index from dictionary
-            if(!(uri in post_index_dictionary)){
+            // prevent processing old posts that have been removed
+            if(!(uri in post_index_dictionary) || (uri in deleted_post_dids)){
                 return;
             }
 
@@ -268,7 +298,7 @@ ws.onmessage = async function(event){
             post.likes++;
             
             // update engagement score for post using calculateEngagentScore func
-            const d_score = helper.calculatePostEngagementScore(post);
+            const d_score = helper.calculatePostEngagementScore(post, idx);
             
             // find new position for post in tier array
             helper.UpdatePostPosition(post, d_score, idx);
@@ -281,7 +311,7 @@ ws.onmessage = async function(event){
             const uri = eventdata.commit.record.subject.uri;
 
             // get post index from dictionary
-            if(!(uri in post_index_dictionary)){
+            if(!(uri in post_index_dictionary) || (uri in deleted_post_dids)){
                 return;
             }
             
@@ -293,7 +323,7 @@ ws.onmessage = async function(event){
             post.reposts++;
             
             // update engagement score for post using calculateEngagentScore func
-            const d_score = helper.calculatePostEngagementScore(post);
+            const d_score = helper.calculatePostEngagementScore(post, idx);
             
             helper.UpdatePostPosition(post, d_score, idx);
 
@@ -322,12 +352,51 @@ ws.onmessage = async function(event){
 
 };
 
-// update top tier list, should happen as often as possible
+// update top tier list
+// this function should be called as often as possible
+// also remove all items with score < 0 from list tail
 async function UpdateTopList(){
+
+    // save current top list for archive
+    console.log("Updating tier list...");
     
     // create new promise to wait for query and sort to complete
     return new Promise(async (resolve, reject) => {
 
+        let n_posts_removed = 0;
+
+        // remove all posts from tail of list with score < 0
+        while(post_tier[post_tier.length-1].engagement_score < 0){
+            
+            console.log("Delete post");
+            // save index of post to be deleted
+            const i = post_tier.length-1;
+
+            // remove last post from post_tier
+            let deleted_post = post_tier.pop();
+
+            // add deleted post did to dictionary
+            deleted_post_dids[deleted_post._id] = 0;
+
+            // remove post index from dictionary
+            delete post_index_dictionary[i];
+            
+            // remove post from main mongodb collection
+            // todo
+
+            // count number removed posts
+            n_posts_removed++;
+
+        }
+        if(n_posts_removed > 0){
+
+            console.log("Removed " + n_posts_removed + " posts from tier list tail.")
+            n_posts_total -= n_posts_removed;
+        
+        }
+        
+        // decrease total post count
+        
         //console.log("Begin Update of Top List");
         //console.log("Slicing top posts");
 
@@ -357,14 +426,15 @@ async function UpdateTopList(){
         // Sort resulting items from mongodb query
 
         // create dictionary of post with id as key
+
         let post_data_lookup = {};
         post_data.map(post => {
             post_data_lookup[post._id] = post;
         })
 
-        // return list of posts by order of id in original list
+        // update list of top post items from mongo by order of id in original list
         current_top_posts = post_uris.map(post_uri => post_data_lookup[post_uri]).filter(doc => doc != undefined);
-        
+
         //console.log(current_top_posts);
 
         // get author username from bsky api
@@ -380,6 +450,7 @@ async function UpdateTopList(){
         );
         */
 
+        console.log("Done updating tier list...");
         resolve(0);
 
     });
@@ -415,16 +486,18 @@ app.get('/', async (req, res) => {
     
     console.log("Returning " + current_top_posts.length + " posts");
 
+    var posts = post_tier.slice(0, items_per_page);
+
     const res_time = Date.now() - start_time;
+
     console.log("Done");
-    
-    var posts = post_tier.slice(0,items_per_page);
 
     res.render("pages/index",
         {
             posts,
             post_data: current_top_posts,
             n_posts_received,
+            n_posts_total,
             db_insertions,
             db_insertion_misses,
             last_update,

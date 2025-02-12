@@ -191,7 +191,9 @@
                         
                         <div class="well">
                             <h4>Debug data</h4>
-                            <h5><%- n_posts_received %> posts</h5>
+                            <h5><%- res_time %> ms</h5>
+                            <h5><%- n_posts_total %> posts in tier</h5>
+                            <h5><%- n_posts_received %> posts processed </h5>
                             <h5><%- db_insertions %> posts in DB</h5>
                             <h5><%- db_insertion_misses %> missed posts</h5>
                             <% let posts_behind = n_posts_received-db_insertions %>
