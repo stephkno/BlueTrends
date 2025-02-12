@@ -139,6 +139,7 @@ async function ProcessBulkWrite(){
         
         
     }
+
 }
 
 // on jetstream receive message event
@@ -461,7 +462,7 @@ async function UpdateTopList(){
 
 // run async chain to update top tier list forever
 function StartUpdateTopList(){
-
+    
     setTimeout( () => {
         
         //console.log("Updating top tier list");

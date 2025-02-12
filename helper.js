@@ -22,8 +22,8 @@ function calculatePostEngagementScore(post, idx) {
         return -1;
     }
 
-    const MAX_POST_POSITION = 100;
-    const MAX_POST_AGE = 60*5; // 1 hours
+    const MAX_POST_POSITION = 500;
+    const MAX_POST_AGE = 60*60; // 1 hours
 
     const likesWeight = 1;
     const repostsWeight = 1;
