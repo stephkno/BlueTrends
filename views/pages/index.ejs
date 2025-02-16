@@ -2,6 +2,7 @@
 <html lang="en">
   
 <head>
+
     
     <title>SkyTrends</title>
 
@@ -16,7 +17,8 @@
 
     <!--Bootstrap toggle-->
     <link href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css" rel="stylesheet">
-<script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
+
+    <script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
 
     <!--Dark mode toggle-->
     <style>
@@ -99,8 +101,8 @@
                             <% if (post==null){ return; } %>
 
                             <!--Post json hover (debug)-->
-                            <div title="<%=JSON.stringify(post, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">
-                            <!--<div title="<%=JSON.stringify(post_tier_data.engagement_score, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
+                            <div title="<%=post_tier_data.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <!--<div title="<%=JSON.stringify(post, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
          
                                 <!--NSFW Content warning-->
                                 <% if(post.nsfw){ %>
@@ -112,26 +114,54 @@
                                     <div><%- post.text %></div>
                                     <br>
                                 <% } %>
+                                
+                                <!--
+                                https://cdn.bsky.app/img/feed_thumbnail/plain/
+                                did:plc:bbp2b224lro3bfnzcqwwnkfo
+                                /
+                                bafkreihburn4cuhyk7mnggvwjkztsmwl7uattvfmo6clxudrdtyw7bt6tq@jpeg
+                                -->
 
                                 <!--Handle image items in post-->
                                 <% if(post.embed && post.embed.images && post.embed.images.length > 0){ %>
                                     
-                                    <p>[Image]</p>
+                                    <div class="well">
 
-                                <!--Handle image description items in post-->
-                                <% }if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
-                                    <p>(<%- post.embed.images[0].alt %>)</p>
-                                        
-                                <!--Handle video description in post-->
+                                        <p>[<%- post.embed.images.length  %> images: <%- JSON.stringify(post.embed.images[0].image) %>]</p>
+
+                                    <!--Handle image description items in post-->
+                                    <% if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
+
+                                            <p>(<%- post.embed.images[0].alt %>)</p>
+                                            
+                                    <!--Handle video description in post-->
+                                    <% } %>
+
+                                    </div>
+
                                 <% }else if(post.embed && post.embed.video){ %>
-                                    <p>[Video]</p>
+                                    <div class="well">
+                                        <p>[Video]</p>
+                                    </div>
+
+                                <!--Handle record description in post-->
+                                <% }else if(post.embed && post.embed.record){ %>
+                                    <div class="well">
+                                        <p>[Record]</p>
+                                    </div>
 
                                 <!--Handle external url description in post-->
                                 <% }else if(post.embed && post.embed.external){ %>
-                                    <a href="<%- post.embed.external.uri %>"><%-post.embed.external.title%></a>
-                                    <p><%-post.embed.external.description %>
-                                    </p>
-                                    <br>
+
+                                    <div class="well">
+                                        <a href="<%- post.embed.external.uri %>"><%-post.embed.external.title%></a>
+                                        <p><%-post.embed.external.description %>
+                                        </p>
+                                        <br>
+                                    </div>
+
+                                <% }else if(post.embed){ %>
+                                    [Other embed: <%- post.embed.$type %>]
                                 <% } %>
 
                                 <!--Post data text-->
@@ -154,7 +184,7 @@
                                 <% let utc = formatter.format(dateObj); %>
 
                                 <!--Likes reposts and time-->
-                                <b><div>Likes: <%- post_tier_data.likes %> | Reposts: <%- post_tier_data.reposts %></div></b>
+                                <b><div>Reposts: <%- post_tier_data.reposts %> | Likes: <%- post_tier_data.likes %></div></b>
                                 <div><%- utc %></div>
                                 <div>
 
@@ -164,7 +194,10 @@
                                     ⬆️
                                 <% }else if(post_tier_data.movement_direction < 0) { %>
                                     ⬇️
+                                <% }else{ %>
+                                    -
                                 <% } %>
+
 
                                 <!--Link to bluesky post-->
                                 <a href="<%- post.post_url %>" target="_blank">Original</a>

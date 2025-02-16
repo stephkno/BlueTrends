@@ -22,8 +22,8 @@ function calculatePostEngagementScore(post, idx) {
         return -1;
     }
 
-    const MAX_POST_POSITION = 500;
-    const MAX_POST_AGE = 60*60; // 1 hours
+    const MAX_POST_POSITION = 1000;
+    const MAX_POST_AGE = 1 * 60 * 60;// 1 hours
 
     const likesWeight = 1;
     const repostsWeight = 1;
@@ -52,8 +52,19 @@ function calculatePostEngagementScore(post, idx) {
             + weightedReposts
             //+ post.comments * commentsWeight)
         ) * timeDecay;
+
+        /*
+        // maybe try this?
+        const engagementRate = (weightedLikes + weightedReposts + post.comments * commentsWeight) / post.viewCount;
+        */
     
     }
+    /*
+    // maybe try this?
+    if (timeSincePost < 300) { // first 5 minutes
+        score += 5; // or another value
+    }
+    */
 
     // get change in post score
     d_score = score - post.engagement_score;

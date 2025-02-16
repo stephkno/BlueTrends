@@ -26,7 +26,6 @@ await helper.init_db();
 const db = helper.get_db();
 const post_collection = db.collection("posts");
 
-// events counter
 var n_posts_received = 0;
 var db_insertions = 0;
 var db_insertion_misses = 0;
@@ -40,27 +39,25 @@ let current_top_posts = [];
 let last_update = 0;
 let server_start_time = 0;
 var n_posts_total = 0;
+const LIST_UPDATE_TIME_IN_SECONDS = 10;
 
-// todo list
-// fix mongodb insert error
+// todo
 
-// get usernames from did
+// - important features to do:
+// handle deletes of posts: IMPORTANT or spam will get stuck in top trends
 // handle deletes of likes and reposts
-
 // handle comments and replies
-// remove low rated posts
-// - that have negative engagement score?
-// - that are too old?
+// handle deleting old posts with no more events coming in
+// fix movement direction from sorting
 
+// - nice features to do:
 // topic summary
-// hashtag section
-// nsfw hide switch
-// dark mode
-// auto dark mode
+// top hashtag section
+// dark mode / auto dark mode
 // image thumbnails
-// links / link previews?
-// avatars?
+// get usernames from did
 // friendly usernames?
+// avatars?
 
 // bulkwrite process lock
 let BulkWriteInProcess = false;
@@ -221,7 +218,9 @@ ws.onmessage = async function(event){
 
             }
 
-            
+            // maybe change to push_back:
+            /*
+
             // insert post data into last place in memory before any negative values
             let insert_idx = post_tier.length-1;
             while(insert_idx >= 0 && post_tier[insert_idx].engagement_score <= 0){
@@ -241,9 +240,22 @@ ws.onmessage = async function(event){
                 engagement_score: 0,
                 movement_direction: 0
             });
+            */
+            post_index_dictionary[uri] = post_tier.length;
+
+            post_tier.push({
+                uri,
+                post_url,
+                createdAt: Date.now(),
+                postedAt: eventdata.time_us,
+                likes: 0,
+                reposts: 0,
+                engagement_score: 0,
+                movement_direction: 0
+            });
 
             // insert post index in tier list
-            post_index_dictionary[uri] = insert_idx;
+            //post_index_dictionary[uri] = insert_idx;
 
             // insert post data into mongodb collection
             /*
@@ -302,7 +314,7 @@ ws.onmessage = async function(event){
             const d_score = helper.calculatePostEngagementScore(post, idx);
             
             // find new position for post in tier array
-            helper.UpdatePostPosition(post, d_score, idx);
+            //helper.UpdatePostPosition(post, d_score, idx);
 
             break;
         }
@@ -326,7 +338,7 @@ ws.onmessage = async function(event){
             // update engagement score for post using calculateEngagentScore func
             const d_score = helper.calculatePostEngagementScore(post, idx);
             
-            helper.UpdatePostPosition(post, d_score, idx);
+            //helper.UpdatePostPosition(post, d_score, idx);
 
             break;
 
@@ -359,10 +371,36 @@ ws.onmessage = async function(event){
 async function UpdateTopList(){
 
     // save current top list for archive
-    console.log("Updating tier list...");
+    console.log("Sorting tier list...");
     
     // create new promise to wait for query and sort to complete
     return new Promise(async (resolve, reject) => {
+
+        const last_post_tier = post_tier;
+
+        post_tier.map(post => {
+            post.movement_direction = 0;
+        })
+
+        // sort tier list by engagement score
+        post_tier.sort((a,b) => {
+            if(a.engagement_score > b.engagement_score){
+                a.movement_direction += 1;
+                b.movement_direction -= 1;
+                return -1;
+            }else if(a.engagement_score < b.engagement_score){
+                a.movement_direction -= 1;
+                b.movement_direction += 1;
+                return 1;
+            }else{
+                return 0;
+            }
+        });
+
+        // remap entire post index dictionary
+        post_tier.map((item, idx) => {
+            post_index_dictionary[item.uri] = idx;
+        })
 /*
         let x = 0
         while(x<=post_tier.length-1){
@@ -383,10 +421,10 @@ async function UpdateTopList(){
             let deleted_post = post_tier.pop();
     
             // add deleted post did to dictionary
-            deleted_post_dids[deleted_post._id] = 0;
+            deleted_post_dids[deleted_post.uri] = 0;
     
             // remove post index from dictionary
-            delete post_index_dictionary[i];
+            delete post_index_dictionary[deleted_post.uri];
             
             // remove post from main mongodb collection
             // todo
@@ -453,7 +491,7 @@ async function UpdateTopList(){
         );
         */
 
-        console.log("Done updating tier list...");
+        console.log("Done sorting tier list...");
         resolve(0);
 
     });
@@ -462,19 +500,19 @@ async function UpdateTopList(){
 
 // run async chain to update top tier list forever
 function StartUpdateTopList(){
-    
-    setTimeout( () => {
+
+    setTimeout( async () => {
         
         //console.log("Updating top tier list");
 
         // Keep updating top list forever
-        UpdateTopList().then(result => {
+        await UpdateTopList().then(result => {
             // setTimeOut
             last_update = Date.now();
             StartUpdateTopList();
         })
     
-    }, 10000);
+    }, LIST_UPDATE_TIME_IN_SECONDS * 1000);
 
 }
 
