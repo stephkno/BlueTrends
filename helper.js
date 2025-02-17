@@ -73,74 +73,6 @@ function calculatePostEngagementScore(post, idx) {
     return d_score;
 }
 
-// update position of post in tierlist based on its new engagement score
-// return number of deleted posts
-function UpdatePostPosition(post, d_score, idx){
-
-    // update engagement score for post using calculateEngagentScore func
-    // if score increased move up list
-    if(d_score > 0){
-
-        let new_idx = idx-1;
-
-        // move up list until new place is found
-        while(new_idx >= 0 && post.engagement_score > post_tier[new_idx].engagement_score){
-
-            // swap posts
-            // new_idx+1 moving up
-            // new_idx moving down
-            let tmp = post_tier[new_idx+1];
-            post_tier[new_idx+1] = post_tier[new_idx];
-            post_tier[new_idx] = tmp;
-
-            // update index in post index dictionary
-            post_index_dictionary[post.uri] = new_idx;
-            post_index_dictionary[post_tier[new_idx+1].uri] = new_idx+1;
-
-            post_tier[new_idx+1].movement_direction = -1;
-            post_tier[new_idx].movement_direction = 1;
-
-            // don't decrement index if we found place at 0
-            if(new_idx != 0){
-                new_idx--;
-            }
-        }
-
-    }
-    // score decreased, move down list
-    else{
-
-        let new_idx = idx+1;
-
-        // move up list until new place is found
-        while(post.engagement_score < post_tier[new_idx].engagement_score && new_idx < post_tier.length){
-            
-            // swap posts
-            let tmp = post_tier[new_idx-1];
-            post_tier[new_idx-1] = post_tier[new_idx];
-            post_tier[new_idx] = tmp;
-
-            // update index in post index dictionary
-            post_index_dictionary[post.uri] = new_idx;
-            post_index_dictionary[post_tier[new_idx-1].uri] = new_idx-1;
-
-            post_tier[new_idx-1].movement_direction = 1;
-            post_tier[new_idx].movement_direction = -1;
-
-            new_idx++;
-            if(new_idx == post_tier.length){
-                break;
-            }
-
-        }
-
-    }
-
- 
-    //return n_posts_removed;
-
-}
-
 const mongo_uri = "mongodb://localhost:27017?connectTimeoutMS=6000000";
 const mongo_client = new mongo.MongoClient(mongo_uri);
 
@@ -181,7 +113,9 @@ const get_midnight_timestamp = () => {
 async function get_user_handle(did){
     
     const req_addr = `https://plc.directory/${did}`
+    console.log(req_addr);
     const res = await axios.get(req_addr);
+
     return res.data.alsoKnownAs[0].slice(5);
 
 }

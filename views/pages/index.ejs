@@ -101,13 +101,17 @@
                             <% if (post==null){ return; } %>
 
                             <!--Post json hover (debug)-->
-                            <div title="<%=post_tier_data.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <div title="<%=post_tier_data.movement_direction%>" class="well<% if(post.nsfw){%> adult <%} %>">
                             <!--<div title="<%=JSON.stringify(post, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
          
                                 <!--NSFW Content warning-->
                                 <% if(post.nsfw){ %>
                                     <p class="text-danger">🔞 Adult Content</p>
                                 <% } %>
+
+                                <!--Post username-->
+                                <div>@<%- post_tier_data.username %></div>
+                                <br>
 
                                 <!--Main post text-->
                                 <% if(post.text!=""){ %>
@@ -127,7 +131,7 @@
                                     
                                     <div class="well">
 
-                                        <p>[<%- post.embed.images.length  %> images: <%- JSON.stringify(post.embed.images[0].image) %>]</p>
+                                        <p>[<%- post.embed.images.length  %> image<% if(post.embed.images.length>1){%>s<%}%>]</p>
 
                                     <!--Handle image description items in post-->
                                     <% if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
@@ -164,9 +168,6 @@
                                     [Other embed: <%- post.embed.$type %>]
                                 <% } %>
 
-                                <!--Post data text-->
-                                <div><%- post.did %></div>
-
                                 <!--Convert timestamp to local time string-->
                                 <% let dateObj = new Date(post_tier_data.postedAt / 1000); %>
                                 <% const timeZoneString = Intl.DateTimeFormat().resolvedOptions().timeZone %>
@@ -184,8 +185,8 @@
                                 <% let utc = formatter.format(dateObj); %>
 
                                 <!--Likes reposts and time-->
-                                <b><div>Reposts: <%- post_tier_data.reposts %> | Likes: <%- post_tier_data.likes %></div></b>
                                 <div><%- utc %></div>
+                                <b><div>Reposts: <%- post_tier_data.reposts %> | Likes: <%- post_tier_data.likes %></div></b>
                                 <div>
 
                                 <!--Tier place and trend direction-->
@@ -200,7 +201,7 @@
 
 
                                 <!--Link to bluesky post-->
-                                <a href="<%- post.post_url %>" target="_blank">Original</a>
+                                <a href="<%- post.post_url %>" target="_blank">View on BlueSky</a>
                                 
                                 <!--Non English language-->
                                 <% if(post.langs != "en"){ %>
@@ -222,6 +223,14 @@
                     <!--Trend data side column-->
                     <div class="col-sm-4" style="background-color:rgb(255, 255, 255);">
                         
+                        <div class="well">
+                            <h4>Topics</h4>
+                        </div>
+
+                        <div class="well">
+                            <h4>Hashtags</h4>
+                        </div>
+
                         <div class="well">
                             <h4>Debug data</h4>
                             <h5><%- res_time %> ms</h5>

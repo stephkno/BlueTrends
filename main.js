@@ -32,7 +32,7 @@ var db_insertion_misses = 0;
 var post_serial_id = 0;
 let last_timestamp = 0;
 let last_post_processed_time = 0;
-const items_per_page = 42;
+const MAX_POSTS = 100;
 let update_queue = [];
 const N_MAX_BULK_WRITE = 100;
 let current_top_posts = [];
@@ -45,9 +45,10 @@ const LIST_UPDATE_TIME_IN_SECONDS = 10;
 
 // - important features to do:
 // handle deletes of posts: IMPORTANT or spam will get stuck in top trends
+// handle deleting old posts with no more events coming in
+
 // handle deletes of likes and reposts
 // handle comments and replies
-// handle deleting old posts with no more events coming in
 // fix movement direction from sorting
 
 // - nice features to do:
@@ -58,86 +59,6 @@ const LIST_UPDATE_TIME_IN_SECONDS = 10;
 // get usernames from did
 // friendly usernames?
 // avatars?
-
-// bulkwrite process lock
-let BulkWriteInProcess = false;
-
-// process bulkwrite for last 100 items in buffer
-// occasionally getting error
-// Bulkwrite error: MongoBulkWriteError: An empty update path is not valid.
-// not sure how that will impact app in future
-async function ProcessBulkWrite(){
-
-    // lock from other events if bulkwrite in process
-    if(BulkWriteInProcess){
-        return;
-    }
-
-    // update if queue is long enough
-    if(update_queue.length >= N_MAX_BULK_WRITE){
-        //console.log("Begin bulk write DB " + update_queue.length);
-        //console.log("BulkWrite");
-
-        // lock function
-        BulkWriteInProcess = true;
-
-        // get top 100 items from buffer
-        let updates = update_queue.splice(0,N_MAX_BULK_WRITE);
-
-        if(updates.length == 0){
-            console.log("Bulkwrite error: Empty Bulkwrite buffer");
-            BulkWriteInProcess = false;
-            return;
-        }
-
-        updates.forEach(item => {
-            if(item.uri == ""){
-                console.log("Bulkwrite error: Empty URI");
-            }
-        })
-
-        // write them to mongodb
-        await post_collection.bulkWrite(updates).then(result => {
-
-            // count successful insertions
-            db_insertions += result.upsertedCount;
-
-            // unlock
-            BulkWriteInProcess = false;
-
-        }).catch(async err => {
-
-            console.log("Bulkwrite error: " + err);
-            console.log("Attempting single inserts");
-            console.log("N_updates: " + updates.length);
-
-            var single_inserts = 0;
-
-            // attempt to insert single items
-            await Promise.all(updates.map(async update => {
-                await post_collection.insertOne(update).then(res => {
-                    
-                    db_insertions++;
-                    single_inserts++;
-
-                }).catch(err => {
-                    
-                    db_insertion_misses ++;
-                    console.log("Bulkwrite error: Error writing single item: " + err);
-                    console.log(update);
-
-                })
-            }));
-
-            console.log("Inserted " + single_inserts + " items individually");
-            BulkWriteInProcess = false;
-        
-        });
-        
-        
-    }
-
-}
 
 // on jetstream receive message event
 ws.onmessage = async function(event){
@@ -157,7 +78,7 @@ ws.onmessage = async function(event){
     last_timestamp = eventdata.time_us;
 
     if(eventdata.commit.operation == "delete"){
-        
+
         const post_id = 
         "at://" 
         + eventdata.did
@@ -167,10 +88,15 @@ ws.onmessage = async function(event){
         + eventdata.commit.rkey;
 
         // handle post/like/comment deletes
+        if(post_id in post_tier){
+            post_tier[post_id].engagement_score = -1;
+        }
+
         return;
     }
 
     switch(eventdata.commit.collection){
+
 
         // when a user creates a new thread
         case "app.bsky.feed.post":{
@@ -207,7 +133,7 @@ ws.onmessage = async function(event){
 
 
             // attempt to label nsfw posts
-            if(eventdata.commit.record.labels &&eventdata.commit.record.labels.values.length>0){
+            if(eventdata.commit.record.labels && eventdata.commit.record.labels.values.length>0){
            
                 if(label_filters.includes(eventdata.commit.record.labels.values[0].val)){
                     post.nsfw = true;
@@ -245,28 +171,16 @@ ws.onmessage = async function(event){
 
             post_tier.push({
                 uri,
+                did: eventdata.did,
                 post_url,
                 createdAt: Date.now(),
                 postedAt: eventdata.time_us,
+                username: undefined,
                 likes: 0,
                 reposts: 0,
                 engagement_score: 0,
                 movement_direction: 0
             });
-
-            // insert post index in tier list
-            //post_index_dictionary[uri] = insert_idx;
-
-            // insert post data into mongodb collection
-            /*
-            update_queue.push({
-                updateOne: {
-                    filter: { _id: uri },
-                    update: { $setOnInsert: post },
-                    upsert: true 
-                }
-            });
-            */
 
             post_collection.updateOne(
                 { _id: uri },
@@ -285,8 +199,6 @@ ws.onmessage = async function(event){
             post_serial_id++;
             n_posts_received++;
             n_posts_total++;
-            
-            //ProcessBulkWrite();
             
             break;
 
@@ -343,14 +255,12 @@ ws.onmessage = async function(event){
             break;
 
         }
-        
+
         // more cases here
 
         // when a user sets a postgate option
         // to restrict who can reply to a post
         case "app.bsky.feed.postgate":{
-            // what does this do?            
-            
         }
 
         default:{
@@ -365,94 +275,78 @@ ws.onmessage = async function(event){
 
 };
 
+function DeleteOldPosts(){
+
+    let n_posts_removed = 0;
+
+    // remove all posts from tail of list with score < 0
+    while(post_tier[post_tier.length-1].engagement_score < 0){
+        
+        // save index of post to be deleted
+        const i = post_tier.length-1;
+
+        // remove last post from post_tier
+        let deleted_post = post_tier.pop();
+
+        // add deleted post did to dictionary
+        deleted_post_dids[deleted_post.uri] = 0;
+
+        // remove post index from dictionary
+        delete post_index_dictionary[deleted_post.uri];
+        
+        // remove post from main mongodb collection
+        // todo
+
+        // count number removed posts
+        n_posts_removed++;
+
+    }
+    if(n_posts_removed > 0){
+        console.log("Removed " + n_posts_removed + " posts from tier list tail.")
+        n_posts_total -= n_posts_removed;
+    }
+
+}
+
 // update top tier list
 // this function should be called as often as possible
 // also remove all items with score < 0 from list tail
 async function UpdateTopList(){
 
-    // save current top list for archive
-    console.log("Sorting tier list...");
+    // update all posts engagement score
+    post_tier.forEach(post => {
+        let idx = post_index_dictionary[post.uri];
+        helper.calculatePostEngagementScore(post, idx);
+    })
     
     // create new promise to wait for query and sort to complete
     return new Promise(async (resolve, reject) => {
 
-        const last_post_tier = post_tier;
-
-        post_tier.map(post => {
-            post.movement_direction = 0;
-        })
+        let last_post_tier = post_tier;
 
         // sort tier list by engagement score
         post_tier.sort((a,b) => {
             if(a.engagement_score > b.engagement_score){
-                a.movement_direction += 1;
-                b.movement_direction -= 1;
                 return -1;
             }else if(a.engagement_score < b.engagement_score){
-                a.movement_direction -= 1;
-                b.movement_direction += 1;
                 return 1;
             }else{
                 return 0;
             }
         });
 
+        // find difference between old index and new index for each post in tier
+
         // remap entire post index dictionary
         post_tier.map((item, idx) => {
             post_index_dictionary[item.uri] = idx;
         })
-/*
-        let x = 0
-        while(x<=post_tier.length-1){
-            console.log("Post idx: " + x + " Post score: " + post_tier[x].engagement_score);
-            x++;
-        }
-        console.log("Last item: " + post_tier[post_tier.length-1].engagement_score)
-*/
-        let n_posts_removed = 0;
-    
-        // remove all posts from tail of list with score < 0
-        while(post_tier[post_tier.length-1].engagement_score < 0){
-            
-            // save index of post to be deleted
-            const i = post_tier.length-1;
-    
-            // remove last post from post_tier
-            let deleted_post = post_tier.pop();
-    
-            // add deleted post did to dictionary
-            deleted_post_dids[deleted_post.uri] = 0;
-    
-            // remove post index from dictionary
-            delete post_index_dictionary[deleted_post.uri];
-            
-            // remove post from main mongodb collection
-            // todo
-    
-            // count number removed posts
-            n_posts_removed++;
-    
-        }
-        if(n_posts_removed > 0){
-            console.log("Removed " + n_posts_removed + " posts from tier list tail.")
-            n_posts_total -= n_posts_removed;
-        }
 
-        //console.log("Begin Update of Top List");
-        //console.log("Slicing top posts");
+        DeleteOldPosts();
 
-        // return top 25 posts from post_tier list
-        //if(req.query.reverse){
-        //    var posts = post_tier.slice(post_tier.length-items_per_page,post_tier.length);
-        //}else{
-        var posts = post_tier.slice(0,items_per_page);
-        //}
-
-        //console.log("Mapping post uris");
+        var posts = post_tier.slice(0,MAX_POSTS);
         let post_uris = posts.map( post => { return post.uri } );
         
-        //console.log("Querying db");
-
         // return post data from mongodb
         const post_data_query_results = await post_collection.find(
             {
@@ -460,13 +354,6 @@ async function UpdateTopList(){
             }
         );
         let post_data = await post_data_query_results.toArray();
-    //    const post_query_explain = await post_data_query_results.explain();
-
-        //console.log("Sorting results db");
-
-        // Sort resulting items from mongodb query
-
-        // create dictionary of post with id as key
 
         let post_data_lookup = {};
         post_data.map(post => {
@@ -476,22 +363,28 @@ async function UpdateTopList(){
         // update list of top post items from mongo by order of id in original list
         current_top_posts = post_uris.map(post_uri => post_data_lookup[post_uri]).filter(doc => doc != undefined);
 
-        //console.log(current_top_posts);
+        // get usernames from post DID for top posts
+        for(let i = 0; i < MAX_POSTS; i++){
+            
+            let post = post_tier[i];
 
-        // get author username from bsky api
-        // for each item which has null authorname fetch author name by did
-        /*
-        helper.get_user_handle(eventdata.did).then(
-            result => {
+            // skip posts which already have username
+            if(post.username != undefined){
+                continue;
             }
-        ).catch(
-            error => {
-                console.log(error);
-            }
-        );
-        */
 
-        console.log("Done sorting tier list...");
+            helper.get_user_handle(post.did).then(
+                result => {
+                    post_tier[i].username = result;
+                }
+            ).catch(
+                error => {
+                    console.log("ERROR: Could not get username: " + error);
+                }
+            );
+
+        }
+
         resolve(0);
 
     });
@@ -521,17 +414,15 @@ StartUpdateTopList();
 
 // Serve index route
 app.get('/', async (req, res) => {
-
+    
     console.log("Request");
+
     const start_time = Date.now();
     
-    console.log("Returning " + current_top_posts.length + " posts");
-
-    var posts = post_tier.slice(0, items_per_page);
+    var posts = post_tier.slice(0, 100);
 
     const res_time = Date.now() - start_time;
 
-    console.log("Done");
 
     res.render("pages/index",
         {
