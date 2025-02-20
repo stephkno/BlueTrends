@@ -92,13 +92,12 @@
                         
                         <!--Each post-->
                         <% let i = 0; %>
-                        <% top_posts.forEach(function(post_tier_data) { %>
+                        <% posts.forEach(function(post) { %>
 
-                            <% let post = post_data[i]; %>
                             <% if (post==null){ return; } %>
 
                             <!--Post json hover (debug)-->
-                            <div title="<%=post_tier_data.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <div title="<%=post.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">
                             <!--<div title="<%=JSON.stringify(post.embed, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
          
                                 <!--NSFW Content warning-->
@@ -107,7 +106,7 @@
                                 <% } %>
 
                                 <!--Post author-->
-                                <div><b>@<%- post_tier_data.author %></b></div>
+                                <div><b>@<%- post.author %></b></div>
                                 <br>
 
                                 <!--Main post text-->
@@ -163,11 +162,11 @@
                                     </div>
 
                                 <!--Handle record description in post-->
-                                <% }else if(post_tier_data.quote){ %>
+                                <% }else if(post.quote){ %>
 
                                     <div class="well">
                                         <p>[Quote]</p>
-                                        <p><%- post_tier_data.quote %></p>
+                                        <p><%- post.quote %></p>
                                     </div>
 
                                 <!--Handle external url description in post-->
@@ -185,7 +184,7 @@
                                 <% } %>
 
                                 <!--Convert timestamp to local time string-->
-                                <% let dateObj = new Date(post_tier_data.postedAt / 1000); %>
+                                <% let dateObj = new Date(post.postedAt / 1000); %>
                                 <% const timeZoneString = Intl.DateTimeFormat().resolvedOptions().timeZone %>
                                 <%  let options = {
                                         day: '2-digit',
@@ -202,14 +201,14 @@
 
                                 <!--Likes reposts and time-->
                                 <div><%- utc %></div>
-                                <b><div>Reposts: <%- post_tier_data.reposts %> | Comments: <%- post_tier_data.comments %> | Likes: <%- post_tier_data.likes %></div></b>
+                                <b><div>Reposts: <%- post.reposts %> | Comments: <%- post.comments %> | Likes: <%- post.likes %></div></b>
                                 <div>
 
                                 <!--Tier place and trend direction-->
                                 #<%- i+1 %>
-                                <% if(post_tier_data.movement_direction > 0){ %>
+                                <% if(post.movement_direction > 0){ %>
                                     ⬆️
-                                <% }else if(post_tier_data.movement_direction < 0) { %>
+                                <% }else if(post.movement_direction < 0) { %>
                                     ⬇️
                                 <% }else{ %>
                                     |
@@ -247,7 +246,7 @@
                             <h4>Hashtags</h4>
                             <% let h = 1 %>
                             <% top_hashtags.forEach(function(hashtag) { %>
-                                <p><%- h++ %>: <%- hashtag.text %></p>
+                                <p><%- h++ %>: <a title="<%-hashtag.uri_list%>" href="/hashtag?t=<%- hashtag.text.slice(1) %>"><%- hashtag.text %></a></p>
                             <% }); %>
                         </div>
 

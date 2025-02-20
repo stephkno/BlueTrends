@@ -166,6 +166,10 @@ function HandlePost(eventdata){
     hashtags = hashtags.map(hashtag => {
         return hashtag.split(" ")[0];
     })
+    // remove any extraneous words after hashtag
+    hashtags = hashtags.map(hashtag => {
+        return hashtag.split("\n")[0];
+    })
 
     hashtags.forEach(hashtag => {
         if(!(hashtag in hashtag_index_dictionary)){
@@ -307,14 +311,21 @@ async function UpdateTopList(){
 
         // update all posts engagement score
         hashtag_tier.forEach(hashtag => {
-            let idx = hashtag_index_dictionary[hashtag];
+            let idx = hashtag_index_dictionary[hashtag.text];
             helper.calculateHashtagEngagementScore(hashtag, idx);
         })
         
-        let last_post_tier = post_tier;
+        //let last_post_tier = post_tier;
 
         // sort tier list by engagement score
-        post_tier.sort((a,b) => a.engagement_score - b.engagement_score);
+        post_tier.sort((a,b) => {
+            if(a.engagement_score > b.engagement_score){
+                return -1;
+            }else if(a.engagement_score < b.engagement_score){
+                return 1;
+            }
+            return 0;
+        });
 
         // find difference between old index and new index for each post in tier
 
@@ -335,7 +346,8 @@ async function UpdateTopList(){
             }
         );
         let post_data = await post_data_query_results.toArray();
-
+        
+        // put post_data list in order of query array of IDs
         let post_data_lookup = {};
         post_data.map(post => {
             post_data_lookup[post._id] = post;
@@ -381,10 +393,8 @@ async function UpdateTopList(){
 
         // remap entire post index dictionary
         hashtag_tier.map((hashtag, idx) => {
-            hashtag_index_dictionary[hashtag] = idx;
+            hashtag_index_dictionary[hashtag.text] = idx;
         })
-
-
 
         resolve(0);
 
@@ -395,7 +405,7 @@ async function UpdateTopList(){
 // on jetstream receive message event
 ws.onmessage = async function(event){
 
-    const eventdata = JSON.parse(event.data);//JSON.parse(dec.decompress(event.data).toString());
+    const eventdata = JSON.parse(event.data);
     
     if(eventdata.kind == "identity" || eventdata.kind == "account"){
         return;
@@ -495,16 +505,27 @@ StartUpdateTopList();
 app.get('/', async (req, res) => {
     
     console.log("Request");
-
+    
     const start_time = Date.now();
-
+    
     console.log("Num posts: " + post_tier.length);
     
     const top_posts = post_tier.slice(0, 100);
-
-    console.log(top_posts[0])
-    console.log(current_top_posts[0])
-
+    
+    console.log(top_posts.length);
+    console.log(current_top_posts.length);
+    
+    let ctp = current_top_posts.map( (post, i) => {
+        console.log("post: \n" + post);
+        post.comments = top_posts[i].comments;
+        post.reposts = top_posts[i].reposts;
+        post.likes = top_posts[i].likes;
+        post.postedAt = top_posts[i].postedAt;
+        post.author = top_posts[i].author;
+        post.engagement_score = top_posts[i].engagement_score;
+        return post;
+    });
+    
     console.log("Num hashtags: " + hashtag_tier.length);
 
     const top_hashtags = hashtag_tier.slice(0,100);
@@ -515,8 +536,7 @@ app.get('/', async (req, res) => {
 
     res.render("pages/index",
         {
-            top_posts,
-            post_data: current_top_posts,
+            posts: ctp,
             top_hashtags,
             n_posts_received,
             n_posts_total,
@@ -537,10 +557,48 @@ app.get('/', async (req, res) => {
 app.get('/hashtag', async (req, res) => {
     
     console.log("Hashtag page Request");
-
     const start_time = Date.now();
 
+    const ht_query = "#" + req.query.t;
+
+    // check if hashtag is in dictionary (exists)
+    if(!(ht_query in hashtag_index_dictionary)){
+        res.send(`Error: Hashtag ${ht_query} not found!`);
+        return;
+    }
+
+    // get index of hashtag from dictionary
+    const ht_index = hashtag_index_dictionary[ht_query];
     
+    console.log(ht_index);
+
+    // get get hashtag post uri's from hashtag tierlist
+    let hashtags = hashtag_tier[ht_index].uri_list;
+
+    console.log(hashtags);
+    
+    // return post data from mongodb by uri
+    const post_data_query_results = await post_collection.find(
+        {
+            _id: { $in: hashtags }
+        }
+    );
+    let posts = await post_data_query_results.toArray();
+
+    // sort posts by uri's in hashtag list
+    let post_data_lookup = {};
+    posts.map(post => {
+        post_data_lookup[post._id] = post;
+    })
+    posts = hashtags.map(hashtag_uri => post_data_lookup[hashtag_uri]).filter(doc => doc != undefined);
+
+    // hack postedAt data into post results
+    posts.map(post=>{
+        post.postedAt = 0;
+    })
+
+    // get top hashtags
+    const top_hashtags = hashtag_tier.slice(0,100);
 
     const res_time = Date.now() - start_time;
 
@@ -548,8 +606,7 @@ app.get('/hashtag', async (req, res) => {
 
     res.render("pages/index",
         {
-            top_posts,
-            post_data: current_top_posts,
+            posts,
             top_hashtags,
             n_posts_received,
             n_posts_total,
