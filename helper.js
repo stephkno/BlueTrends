@@ -12,7 +12,7 @@ export {
     get_db,
     close_db,
     calculatePostEngagementScore,
-    UpdatePostPosition
+    calculateHashtagEngagementScore
 };
 
 function calculatePostEngagementScore(post, idx) {
@@ -27,7 +27,7 @@ function calculatePostEngagementScore(post, idx) {
 
     const likesWeight = 1;
     const repostsWeight = 1;
-    //const commentsWeight = 3;
+    const commentsWeight = 1;
     const timeDecayFactor = 0.9; // Adjust this factor based on how quickly you want scores to decay
 
     // calculate engagement score
@@ -35,6 +35,7 @@ function calculatePostEngagementScore(post, idx) {
     const timeDecay = Math.exp(-timeDecayFactor * timeSincePost / 3600); // Decay over hours
     const weightedLikes = post.likes * likesWeight;
     const weightedReposts = post.reposts * repostsWeight;
+    const weightedComments = post.comments * commentsWeight;
 
     let score = 0;
     let d_score = 0;
@@ -48,9 +49,10 @@ function calculatePostEngagementScore(post, idx) {
 
     }else{
         
-        score = (weightedLikes
+        score = (
+            weightedLikes
             + weightedReposts
-            //+ post.comments * commentsWeight)
+            + weightedComments
         ) * timeDecay;
 
         /*
@@ -59,16 +61,55 @@ function calculatePostEngagementScore(post, idx) {
         */
     
     }
-    /*
     // maybe try this?
     if (timeSincePost < 300) { // first 5 minutes
         score += 5; // or another value
     }
-    */
 
     // get change in post score
     d_score = score - post.engagement_score;
     post.engagement_score = score;
+
+    return d_score;
+}
+
+function calculateHashtagEngagementScore(hashtag, idx) {
+
+    // don't handle post which has already been marked for removal
+    if(hashtag.engagement_score < 0){
+        return -1;
+    }
+
+    const MAX_HASHTAG_POSITION = 1000;
+    const MAX_HASHTAG_AGE = 10;// 1 hours
+
+    const timeDecayFactor = 0.9; // Adjust this factor based on how quickly you want scores to decay
+
+    // calculate engagement score
+    const timeSincePost = (Date.now() - new Date(hashtag.time_last_seen).getTime()) / 1000; // Time in seconds
+    const timeDecay = Math.exp(-timeDecayFactor * timeSincePost / 3600); // Decay over hours
+
+    let score = 0;
+    let d_score = 0;
+
+    // mark to remove all posts older than 1 hour and below tier position 1000
+    if( timeSincePost > MAX_HASHTAG_AGE && idx > MAX_HASHTAG_POSITION ){
+        
+        // mark post for removal
+        // should cause post to sink to bottom of tier list
+        score = -1;
+
+    }else{
+        
+        score = (
+            hashtag.count
+        ) * timeDecay;
+
+    }
+
+    // get change in post score
+    d_score = score - hashtag.engagement_score;
+    hashtag.engagement_score = score;
 
     return d_score;
 }
@@ -113,7 +154,6 @@ const get_midnight_timestamp = () => {
 async function get_user_handle(did){
     
     const req_addr = `https://plc.directory/${did}`
-    console.log(req_addr);
     const res = await axios.get(req_addr);
 
     return res.data.alsoKnownAs[0].slice(5);

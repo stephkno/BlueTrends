@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import ReconnectingWebSocket from 'rws';
 
 import * as helper from './helper.js';
-import { post_index_dictionary, post_tier, deleted_post_dids } from "./data.js";
+import { post_index_dictionary, post_tier, deleted_post_dids, hashtag_index_dictionary, hashtag_tier } from "./data.js";
 
 const app = express();
 const port = 8080;
@@ -17,9 +17,7 @@ const dec = new zstd.Decompressor();
 dec.setParameters({windowLogMax: 24});
 dec.loadDictionary(fs.readFileSync('./data/zstd_dictionary'));
 
-//const ws = new WebSocket(`wss://jetstream1.us-west.bsky.network/subscribe?cursor=${helper.get_midnight_timestamp()}&?wantedCollections=app.bsky.feed.*&compress=true`);
 const ws = new ReconnectingWebSocket.ReconnectingWebSocket(`wss://jetstream1.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.*&compress=true`, {});
-
 const label_filters = ['Adult', 'porn', 'sexual', 'graphic-media', 'nudity', 'Nsfw', 'nsfw']
 
 await helper.init_db();
@@ -30,254 +28,213 @@ var n_posts_received = 0;
 var db_insertions = 0;
 var db_insertion_misses = 0;
 var post_serial_id = 0;
-let last_timestamp = 0;
-let last_post_processed_time = 0;
 const MAX_POSTS = 100;
-let update_queue = [];
-const N_MAX_BULK_WRITE = 100;
 let current_top_posts = [];
 let last_update = 0;
 let server_start_time = 0;
 var n_posts_total = 0;
 const LIST_UPDATE_TIME_IN_SECONDS = 10;
 
-// todo
+// - todo:
+// handle marking posts that quote nsfw posts
 
-// - important features to do:
-// handle deletes of posts: IMPORTANT or spam will get stuck in top trends
-// handle deleting old posts with no more events coming in
+// combine post tier and post data into one item for requests
+// put hashtags into db with post URIs
+// fetch hashtag URIs from mongodb
+// page that returns posts with clicked hasthag in it
 
-// handle deletes of likes and reposts
-// handle comments and replies
 // fix movement direction from sorting
 
+// handle deletes of likes comments and reposts?
+// handle quotes
+// handle displaying 'records' aka quoted posts 
+// hotlinking media?
+
 // - nice features to do:
-// topic summary
-// top hashtag section
+// topics
+// hashtags
 // dark mode / auto dark mode
-// image thumbnails
-// get usernames from did
-// friendly usernames?
 // avatars?
+// fix mobile ui
 
-// on jetstream receive message event
-ws.onmessage = async function(event){
+function HandlePost(eventdata){
 
-    const eventdata = JSON.parse(event.data);//JSON.parse(dec.decompress(event.data).toString());
+    const uri = 
+    "at://" 
+    + eventdata.did
+    + "/" 
+    + eventdata.commit.collection 
+    + "/"
+    + eventdata.commit.rkey;
+
+    const post_url = "https://bsky.app/profile/" + eventdata.did + "/post/" + eventdata.commit.rkey;
+
+    // bsky url format:
+    // http://www.bsky.app/<DID>/commit/<RKEY>
+
+    const size = Buffer.byteLength(JSON.stringify(eventdata))
+
+    var post = eventdata.commit.record;
+
+    // remove mysterious empty key item from post json
+    delete post[''];
+
+    post._id = uri;
+    post.did = eventdata.did;
+    post.timestamp = eventdata.time_us;
+    post.post_url = post_url;
+    post.deleted = false;
+    post.nsfw = false;
+
+    // attempt to label nsfw posts
+    if(eventdata.commit.record.labels && eventdata.commit.record.labels.values.length>0){
+   
+        if(label_filters.includes(eventdata.commit.record.labels.values[0].val)){
+            post.nsfw = true;
+        }else{
+            //console.log("Unrecognized filter");
+            //console.log(eventdata.commit.record.labels);
+        }
+
+    }
     
-    if(eventdata.kind == "identity" || eventdata.kind == "account"){
-        return;
-    }
+    // check if post is a comment
+    let is_comment = false;
+    if(eventdata.commit && eventdata.commit.record && eventdata.commit.record.reply){
+        // get uri of post this is a comment to
+        let reply_original_post_uri = eventdata.commit.record.reply.parent.uri;
 
-    if(!eventdata.commit){
-        console.log("No commit");
-        console.log(eventdata);
-        return;
-    }
-
-    last_timestamp = eventdata.time_us;
-
-    if(eventdata.commit.operation == "delete"){
-
-        const post_id = 
-        "at://" 
-        + eventdata.did
-        + "/"
-        + eventdata.commit.collection
-        + "/"
-        + eventdata.commit.rkey;
-
-        // handle post/like/comment deletes
-        if(post_id in post_tier){
-            post_tier[post_id].engagement_score = -1;
+        // get post and update comment count
+        if(reply_original_post_uri in post_index_dictionary){
+            post_tier[post_index_dictionary[reply_original_post_uri]].comments++;
         }
-
-        return;
+        // mark post as comment
+        is_comment = true;
     }
 
-    switch(eventdata.commit.collection){
+    // get quoted post content if available
+    let quote = undefined;
+    if(post.embed && post.embed.$type == "app.bsky.embed.record" && post.embed.record && post.embed.record.uri){
+        quote = post.embed.record.uri;
+    }
+    
+    post_index_dictionary[uri] = post_tier.length;
 
+    post_tier.push({
+        uri,
+        did: eventdata.did,
+        post_url,
+        createdAt: Date.now(),
+        postedAt: eventdata.time_us,
+        author: undefined,
+        likes: 0,
+        reposts: 0,
+        comments: 0,
+        quote,
+        is_comment,
+        engagement_score: 0,
+        movement_direction: 0
+    });
 
-        // when a user creates a new thread
-        case "app.bsky.feed.post":{
-            
-            const uri = 
-            "at://" 
-            + eventdata.did
-            + "/" 
-            + eventdata.commit.collection 
-            + "/"
-            + eventdata.commit.rkey;
-
-            const post_url = "https://bsky.app/profile/" + eventdata.did + "/post/" + eventdata.commit.rkey;
-
-            // bsky url format:
-            // http://www.bsky.app/<DID>/commit/<RKEY>
-            last_post_processed_time = eventdata.commit.createdAt;
-            last_timestamp = eventdata.time_us;
-
-            const size = Buffer.byteLength(JSON.stringify(eventdata))
-
-            var post = eventdata.commit.record;
-
-            // remove mysterious empty key item from post json
-            delete post[''];
-
-            post._id = uri;
-            post.did = eventdata.did;
-            post.timestamp = eventdata.time_us;
-            post.post_url = post_url;
-            post.deleted = false;
-            post.author = "[Pending...]";
-            post.nsfw = false;
-
-
-            // attempt to label nsfw posts
-            if(eventdata.commit.record.labels && eventdata.commit.record.labels.values.length>0){
-           
-                if(label_filters.includes(eventdata.commit.record.labels.values[0].val)){
-                    post.nsfw = true;
-                }else{
-                    //console.log("Unrecognized filter");
-                    //console.log(eventdata.commit.record.labels);
-                }
-
-            }
-
-            // maybe change to push_back:
-            /*
-
-            // insert post data into last place in memory before any negative values
-            let insert_idx = post_tier.length-1;
-            while(insert_idx >= 0 && post_tier[insert_idx].engagement_score <= 0){
-                insert_idx--;
-            }
-            if(insert_idx < 0){
-                insert_idx = 0;
-            }
-
-            post_tier.splice(insert_idx, 0, {
-                uri,
-                post_url,
-                createdAt: Date.now(),
-                postedAt: eventdata.time_us,
-                likes: 0,
-                reposts: 0,
-                engagement_score: 0,
-                movement_direction: 0
-            });
-            */
-            post_index_dictionary[uri] = post_tier.length;
-
-            post_tier.push({
-                uri,
-                did: eventdata.did,
-                post_url,
-                createdAt: Date.now(),
-                postedAt: eventdata.time_us,
-                username: undefined,
-                likes: 0,
-                reposts: 0,
-                engagement_score: 0,
-                movement_direction: 0
-            });
-
-            post_collection.updateOne(
-                { _id: uri },
-                { $set: post },
-                { upsert: true}
-            ).then(res => {
-                
-                db_insertions++;
-
-            }).catch(res => {
-                console.log("Err: " + res);
-                console.log(uri);
-                console.log(post);
-            });
+    post_collection.updateOne(
+        { _id: uri },
+        { $set: post },
+        { upsert: true}
+    ).then(res => {
         
-            post_serial_id++;
-            n_posts_received++;
-            n_posts_total++;
+        db_insertions++;
+
+    }).catch(res => {
+        console.log("Err: " + res);
+        console.log(uri);
+        console.log(post);
+    });
+
+    post_serial_id++;
+    n_posts_received++;
+    n_posts_total++;
+    
+    // ignore all nsfw hashtags for now
+    if(post.nsfw){
+        return;
+    }
+
+    let hashtags = eventdata.commit.record.text.split(" ");
+    hashtags = hashtags.filter(item => item[0] == "#" && item.length > 0);
+
+    // remove any extraneous words after hashtag
+    hashtags = hashtags.map(hashtag => {
+        return hashtag.split(" ")[0];
+    })
+
+    hashtags.forEach(hashtag => {
+        if(!(hashtag in hashtag_index_dictionary)){
             
-            break;
+            hashtag_index_dictionary[hashtag] = hashtag_tier.length;
+            hashtag_tier.push(
+                {
+                    text:hashtag,
+                    count:1,
+                    engagement_score: 0,
+                    time_last_seen: Date.now(),
+                    uri_list: [uri]
+                });
 
-        }
+        }else{
 
-        // when a user likes a thread
-        case "app.bsky.feed.like":{
-
-            const uri = eventdata.commit.record.subject.uri;
-
-            // get post index from dictionary
-            // prevent processing old posts that have been removed
-            if(!(uri in post_index_dictionary) || (uri in deleted_post_dids)){
-                return;
-            }
-
-            // get post index from dictionary
-            const idx = post_index_dictionary[uri];
-            
-            // increment like count for post
-            let post = post_tier[idx];
-            post.likes++;
-            
-            // update engagement score for post using calculateEngagentScore func
-            const d_score = helper.calculatePostEngagementScore(post, idx);
-            
-            // find new position for post in tier array
-            //helper.UpdatePostPosition(post, d_score, idx);
-
-            break;
-        }
-
-        // when a user reposts a thread
-        case "app.bsky.feed.repost":{
-            const uri = eventdata.commit.record.subject.uri;
-
-            // get post index from dictionary
-            if(!(uri in post_index_dictionary) || (uri in deleted_post_dids)){
-                return;
-            }
-            
-            // get post index from dictionary
-            const idx = post_index_dictionary[uri];
-
-            // increment repost count for post
-            let post = post_tier[idx];
-            post.reposts++;
-            
-            // update engagement score for post using calculateEngagentScore func
-            const d_score = helper.calculatePostEngagementScore(post, idx);
-            
-            //helper.UpdatePostPosition(post, d_score, idx);
-
-            break;
-
-        }
-
-        // more cases here
-
-        // when a user sets a postgate option
-        // to restrict who can reply to a post
-        case "app.bsky.feed.postgate":{
-        }
-
-        default:{
-
-            //console.log("Unrecognized event: " + eventdata.commit.collection);
-            break;
+            hashtag_tier[hashtag_index_dictionary[hashtag]].count++;
+            hashtag_tier[hashtag_index_dictionary[hashtag]].time_last_seen = Date.now();
+            hashtag_tier[hashtag_index_dictionary[hashtag]].uri_list.push(uri);
         
         }
+    });
+    
+}
+function HandleLike(eventdata){
+ 
+    const uri = eventdata.commit.record.subject.uri;
+
+    // get post index from dictionary
+    // prevent processing old posts that have been removed
+    if(!(uri in post_index_dictionary) || (uri in deleted_post_dids)){
+        return;
     }
 
-    return;
+    // get post index from dictionary
+    const idx = post_index_dictionary[uri];
+    
+    // increment like count for post
+    let post = post_tier[idx];
+    post.likes++;
+    
+    // update engagement score for post using calculateEngagentScore func
+    const d_score = helper.calculatePostEngagementScore(post, idx);
 
-};
+}
+function HandleRepost(eventdata){
+    const uri = eventdata.commit.record.subject.uri;
+
+    // get post index from dictionary
+    if(!(uri in post_index_dictionary) || (uri in deleted_post_dids)){
+        return;
+    }
+    
+    // get post index from dictionary
+    const idx = post_index_dictionary[uri];
+
+    // increment repost count for post
+    let post = post_tier[idx];
+    post.reposts++;
+    
+    // update engagement score for post using calculateEngagentScore func
+    const d_score = helper.calculatePostEngagementScore(post, idx);
+    
+}
 
 function DeleteOldPosts(){
 
     let n_posts_removed = 0;
+    let n_hashtags_removed = 0;
 
     // remove all posts from tail of list with score < 0
     while(post_tier[post_tier.length-1].engagement_score < 0){
@@ -306,34 +263,58 @@ function DeleteOldPosts(){
         n_posts_total -= n_posts_removed;
     }
 
+
+    // remove all posts from tail of list with score < 0
+    while(hashtag_tier[hashtag_tier.length-1].engagement_score < 0){
+        
+        // save index of post to be deleted
+        const i = hashtag_tier.length-1;
+
+        // remove last post from post_tier
+        let deleted_hashtag = hashtag_tier.pop();
+
+        // add deleted post did to dictionary
+        deleted_hashtag_dids[deleted_hashtag] = 0;
+
+        // remove post index from dictionary
+        delete hashtag_index_dictionary[deleted_hashtag];
+        
+        // remove post from main mongodb collection
+        // todo
+
+        // count number removed posts
+        n_hashtags_removed++;
+
+    }
+    if(n_hashtags_removed > 0){
+        console.log("Removed " + n_hashtags_removed + " hashtags from tier list tail.")
+        n_posts_total -= n_hashtags_removed;
+    }
+    
 }
 
 // update top tier list
-// this function should be called as often as possible
-// also remove all items with score < 0 from list tail
 async function UpdateTopList(){
 
-    // update all posts engagement score
-    post_tier.forEach(post => {
-        let idx = post_index_dictionary[post.uri];
-        helper.calculatePostEngagementScore(post, idx);
-    })
-    
     // create new promise to wait for query and sort to complete
     return new Promise(async (resolve, reject) => {
 
+        // update all posts engagement score
+        post_tier.forEach(post => {
+            let idx = post_index_dictionary[post.uri];
+            helper.calculatePostEngagementScore(post, idx);
+        })
+
+        // update all posts engagement score
+        hashtag_tier.forEach(hashtag => {
+            let idx = hashtag_index_dictionary[hashtag];
+            helper.calculateHashtagEngagementScore(hashtag, idx);
+        })
+        
         let last_post_tier = post_tier;
 
         // sort tier list by engagement score
-        post_tier.sort((a,b) => {
-            if(a.engagement_score > b.engagement_score){
-                return -1;
-            }else if(a.engagement_score < b.engagement_score){
-                return 1;
-            }else{
-                return 0;
-            }
-        });
+        post_tier.sort((a,b) => a.engagement_score - b.engagement_score);
 
         // find difference between old index and new index for each post in tier
 
@@ -369,13 +350,13 @@ async function UpdateTopList(){
             let post = post_tier[i];
 
             // skip posts which already have username
-            if(post.username != undefined){
+            if(post.author != undefined){
                 continue;
             }
 
             helper.get_user_handle(post.did).then(
                 result => {
-                    post_tier[i].username = result;
+                    post_tier[i].author = result;
                 }
             ).catch(
                 error => {
@@ -385,11 +366,109 @@ async function UpdateTopList(){
 
         }
 
+        // sort hashtags
+
+        // sort hashtag list by engagement score
+        hashtag_tier.sort((a,b) => {
+            if(a.engagement_score > b.engagement_score){
+                return -1;
+            }else if(a.engagement_score < b.engagement_score){
+                return 1;
+            }else{
+                return 0;
+            }
+        });
+
+        // remap entire post index dictionary
+        hashtag_tier.map((hashtag, idx) => {
+            hashtag_index_dictionary[hashtag] = idx;
+        })
+
+
+
         resolve(0);
 
     });
 
 }
+
+// on jetstream receive message event
+ws.onmessage = async function(event){
+
+    const eventdata = JSON.parse(event.data);//JSON.parse(dec.decompress(event.data).toString());
+    
+    if(eventdata.kind == "identity" || eventdata.kind == "account"){
+        return;
+    }
+
+    if(!eventdata.commit){
+        console.log("No commit");
+        console.log(eventdata);
+        return;
+    }
+
+    if(eventdata.commit.operation == "delete"){
+
+        const post_id = 
+        "at://" 
+        + eventdata.did
+        + "/"
+        + eventdata.commit.collection
+        + "/"
+        + eventdata.commit.rkey;
+
+        // handle post/like/comment deletes
+        if(post_id in post_tier){
+            post_tier[post_id].engagement_score = -1;
+        }
+
+        return;
+    }
+    
+    switch(eventdata.commit.collection){
+
+        // when a user creates a new thread
+        case "app.bsky.feed.post":{
+
+            HandlePost(eventdata);
+            break;
+
+        }
+
+        // when a user likes a thread
+        case "app.bsky.feed.like":{
+
+            HandleLike(eventdata);
+            break;
+
+        }
+
+        // when a user reposts a thread
+        case "app.bsky.feed.repost":{
+            
+            HandleRepost(eventdata);
+            break;
+
+        }
+
+        // more cases here
+
+        // when a user sets a postgate option
+        // to restrict who can reply to a post
+        case "app.bsky.feed.postgate":{
+        }
+
+        default:{
+
+            //console.log("Unrecognized event: " + eventdata.commit.collection);
+            break;
+        
+        }
+    }
+
+    return;
+
+};
 
 // run async chain to update top tier list forever
 function StartUpdateTopList(){
@@ -418,16 +497,27 @@ app.get('/', async (req, res) => {
     console.log("Request");
 
     const start_time = Date.now();
+
+    console.log("Num posts: " + post_tier.length);
     
-    var posts = post_tier.slice(0, 100);
+    const top_posts = post_tier.slice(0, 100);
+
+    console.log(top_posts[0])
+    console.log(current_top_posts[0])
+
+    console.log("Num hashtags: " + hashtag_tier.length);
+
+    const top_hashtags = hashtag_tier.slice(0,100);
 
     const res_time = Date.now() - start_time;
 
+    console.log("Responding");
 
     res.render("pages/index",
         {
-            posts,
+            top_posts,
             post_data: current_top_posts,
+            top_hashtags,
             n_posts_received,
             n_posts_total,
             db_insertions,
@@ -439,7 +529,43 @@ app.get('/', async (req, res) => {
         }
     );
 
+    console.log("Done");
+
 });
+
+// Serve index route
+app.get('/hashtag', async (req, res) => {
+    
+    console.log("Hashtag page Request");
+
+    const start_time = Date.now();
+
+    
+
+    const res_time = Date.now() - start_time;
+
+    console.log("Responding");
+
+    res.render("pages/index",
+        {
+            top_posts,
+            post_data: current_top_posts,
+            top_hashtags,
+            n_posts_received,
+            n_posts_total,
+            db_insertions,
+            db_insertion_misses,
+            last_update,
+            now: Date.now(),
+            res_time,
+            server_start_time
+        }
+    );
+
+    console.log("Done");
+
+});
+
 
 // try to close db cleanly on exit
 function cleanup(){

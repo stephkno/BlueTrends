@@ -2,9 +2,8 @@
 <html lang="en">
   
 <head>
-
     
-    <title>SkyTrends</title>
+    <title>SkyTrend</title>
 
     <!--Meta-->
     <meta charset="utf-8">
@@ -17,14 +16,15 @@
 
     <!--Bootstrap toggle-->
     <link href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css" rel="stylesheet">
-
     <script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
 
     <!--Dark mode toggle-->
     <style>
+
         .adult {
             display: none;
         }
+
     </style>
 <script>
     function Darkmode(toggle) {
@@ -60,9 +60,7 @@
                 <ul class="nav navbar-nav">
                     <li class="active"><a href="#">Home</a></li>
                     <li><a href="#"></a></li>
-                    <input type="checkbox" checked data-toggle="toggle" data-on="Light" data-off="Dark" onchange="Darkmode(this)">
-                    <input type="checkbox" checked data-toggle="toggle" data-on="Hide NSFW" data-off="Show NSFW" onchange="HideshowAdultContent(this)">
-                </ul>
+                </ul>            
             </div>
         </nav>
 
@@ -84,7 +82,6 @@
                 <% let formatter = new Intl.DateTimeFormat('en-US', options); %>
                 <% let start_time = formatter.format(server_start_time); %>
 
-
             </section>
             <h1>Trending on BlueSky</h1>
 
@@ -95,27 +92,27 @@
                         
                         <!--Each post-->
                         <% let i = 0; %>
-                        <% posts.forEach(function(post_tier_data) { %>
+                        <% top_posts.forEach(function(post_tier_data) { %>
 
                             <% let post = post_data[i]; %>
                             <% if (post==null){ return; } %>
 
                             <!--Post json hover (debug)-->
-                            <div title="<%=post_tier_data.movement_direction%>" class="well<% if(post.nsfw){%> adult <%} %>">
-                            <!--<div title="<%=JSON.stringify(post, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
+                            <div title="<%=post_tier_data.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <!--<div title="<%=JSON.stringify(post.embed, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
          
                                 <!--NSFW Content warning-->
                                 <% if(post.nsfw){ %>
                                     <p class="text-danger">🔞 Adult Content</p>
                                 <% } %>
 
-                                <!--Post username-->
-                                <div>@<%- post_tier_data.username %></div>
+                                <!--Post author-->
+                                <div><b>@<%- post_tier_data.author %></b></div>
                                 <br>
 
                                 <!--Main post text-->
                                 <% if(post.text!=""){ %>
-                                    <div><%- post.text %></div>
+                                    <div><h5><%- post.text %></h5></div>
                                     <br>
                                 <% } %>
                                 
@@ -143,15 +140,34 @@
 
                                     </div>
 
+                                
+                                <% }else if(post.media && post.media.images && post.media.images.length > 0){ %>
+                                    
+                                    <div class="well">
+
+                                        <p>[<%- post.media.images.length  %> image<% if(post.media.images.length>1){%>s<%}%>]</p>
+
+                                    <!--Handle image description items in post-->
+                                    <% if(post.media && post.media.images && post.media.images.length > 0 && post.media.images[0].alt != ""){ %>
+
+                                            <p>(<%- post.media.images[0].alt %>)</p>
+                                            
+                                    <!--Handle video description in post-->
+                                    <% } %>
+
+                                    </div>
+
                                 <% }else if(post.embed && post.embed.video){ %>
                                     <div class="well">
                                         <p>[Video]</p>
                                     </div>
 
                                 <!--Handle record description in post-->
-                                <% }else if(post.embed && post.embed.record){ %>
+                                <% }else if(post_tier_data.quote){ %>
+
                                     <div class="well">
-                                        <p>[Record]</p>
+                                        <p>[Quote]</p>
+                                        <p><%- post_tier_data.quote %></p>
                                     </div>
 
                                 <!--Handle external url description in post-->
@@ -186,7 +202,7 @@
 
                                 <!--Likes reposts and time-->
                                 <div><%- utc %></div>
-                                <b><div>Reposts: <%- post_tier_data.reposts %> | Likes: <%- post_tier_data.likes %></div></b>
+                                <b><div>Reposts: <%- post_tier_data.reposts %> | Comments: <%- post_tier_data.comments %> | Likes: <%- post_tier_data.likes %></div></b>
                                 <div>
 
                                 <!--Tier place and trend direction-->
@@ -196,16 +212,15 @@
                                 <% }else if(post_tier_data.movement_direction < 0) { %>
                                     ⬇️
                                 <% }else{ %>
-                                    -
+                                    |
                                 <% } %>
-
 
                                 <!--Link to bluesky post-->
                                 <a href="<%- post.post_url %>" target="_blank">View on BlueSky</a>
                                 
                                 <!--Non English language-->
                                 <% if(post.langs != "en"){ %>
-                                - <%- post.langs %>
+                                    | <%- post.langs %>
                                 <% } %>
                             
                                 </div>
@@ -224,33 +239,30 @@
                     <div class="col-sm-4" style="background-color:rgb(255, 255, 255);">
                         
                         <div class="well">
+                            <input class="switch" type="checkbox" checked data-toggle="toggle" data-on="Light" data-off="Dark" onchange="Darkmode(this)">
+                            <input class="switch" type="checkbox" data-toggle="toggle" data-on="NSFW" data-off="NSFW" onchange="HideshowAdultContent(this)">
+                        </div>
+
+                        <div title="<%= JSON.stringify(top_hashtags) %>" class="well">
+                            <h4>Hashtags</h4>
+                            <% let h = 1 %>
+                            <% top_hashtags.forEach(function(hashtag) { %>
+                                <p><%- h++ %>: <%- hashtag.text %></p>
+                            <% }); %>
+                        </div>
+
+                        <div class="well">
                             <h4>Topics</h4>
                         </div>
 
                         <div class="well">
-                            <h4>Hashtags</h4>
-                        </div>
-
-                        <div class="well">
                             <h4>Debug data</h4>
-                            <h5><%- res_time %> ms</h5>
                             <h5><%- n_posts_total %> posts in tier</h5>
                             <h5><%- n_posts_received-n_posts_total %> posts removed</h5>
                             <h5><%- n_posts_received %> posts processed </h5>
                             <h5><%- db_insertions %> posts in DB</h5>
-                            <h5><%- db_insertion_misses %> missed posts</h5>
-                            <% let posts_behind = n_posts_received-db_insertions %>
-                            <% if(posts_behind>100){ %>
-                            <%    posts_behind -= 100; %>
-                            <% }else{ %>
-                            <%    posts_behind = 0; %>
-                            <% } %>
-
-                            <h5><%- posts_behind %> posts behind</h5>
-
                             <h5>Last updated: <%- (now-last_update)/1000 %> s ago</h5>
                             <h5>Server started at: <%- start_time %></h5>
-
                         </div>
                         
                     </div>
