@@ -60,10 +60,10 @@
             
             <div class="container-fluid">
                 <div class="navbar-header">
-                    <a class="navbar-brand" href="#">BlueTrend</a>
+                    <a class="navbar-brand" href="/">BlueTrend</a>
                 </div>
                 <ul class="nav navbar-nav">
-                    <li class="active"><a href="#">Home</a></li>
+                    <li class="active"><a href="/">Home</a></li>
                     <li><a href="#"></a></li>
                 </ul>            
             </div>
@@ -88,7 +88,7 @@
                 <% let start_time = formatter.format(server_start_time); %>
 
             </section>
-            <h1>Trending on BlueSky</h1>
+            <h1>Posts with <%-ht_query%></h1>
 
             <!--Main section-->
             <section>
@@ -103,7 +103,7 @@
 
                             <!--Post json hover (debug)-->
                             <!--<div title="<%=post.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
-                            <div title="<%=JSON.stringify(post, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <div title="<%=JSON.stringify(post.labels, null, 2)%>" class="well<% if(post.nsfw){%> adult <%} %>">
          
                                 <!--NSFW Content warning-->
                                 <% if(post.nsfw){ %>
@@ -225,11 +225,6 @@
                                 <!--Non English language-->
                                 <% if(post.langs != "en"){ %>
                                     | <%- post.langs %>
-                                <% } %>
-
-                                <!--Non English language-->
-                                <% if(post.labels){ %>
-                                    | <%- JSON.stringify(post.labels) %>
                                 <% } %>
                             
                                 </div>

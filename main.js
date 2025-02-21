@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import ReconnectingWebSocket from 'rws';
 
 import * as helper from './helper.js';
-import { post_index_dictionary, post_tier, deleted_post_dids, hashtag_index_dictionary, hashtag_tier } from "./data.js";
+import { post_index_dictionary, post_tier, deleted_post_dids, hashtag_index_dictionary, hashtag_tier, deleted_hashtag_dids } from "./data.js";
 
 const app = express();
 const port = 8080;
@@ -81,22 +81,24 @@ function HandlePost(eventdata){
 
     post._id = uri;
     post.did = eventdata.did;
-    post.timestamp = eventdata.time_us;
+    post.postedAt = eventdata.time_us;
     post.post_url = post_url;
     post.deleted = false;
     post.nsfw = false;
 
-    // attempt to label nsfw posts
-    if(eventdata.commit.record.labels && eventdata.commit.record.labels.values.length>0){
-   
-        if(label_filters.includes(eventdata.commit.record.labels.values[0].val)){
+    post.labels = eventdata.commit.record.labels ? eventdata.commit.record.labels.values.map(value => { return value.val }) : [];
+
+    post.labels.forEach(label =>{
+
+        // check if filter list contains first label value
+        if(label_filters.includes(label)){
             post.nsfw = true;
         }else{
             //console.log("Unrecognized filter");
             //console.log(eventdata.commit.record.labels);
         }
 
-    }
+    })
     
     // check if post is a comment
     let is_comment = false;
@@ -160,7 +162,7 @@ function HandlePost(eventdata){
     }
 
     let hashtags = eventdata.commit.record.text.split(" ");
-    hashtags = hashtags.filter(item => item[0] == "#" && item.length > 0);
+    hashtags = hashtags.filter(item => item[0] == "#" && item.length > 1);
 
     // remove any extraneous words after hashtag
     hashtags = hashtags.map(hashtag => {
@@ -466,13 +468,30 @@ ws.onmessage = async function(event){
         // when a user sets a postgate option
         // to restrict who can reply to a post
         case "app.bsky.feed.postgate":{
-        }
-
-        default:{
-
-            //console.log("Unrecognized event: " + eventdata.commit.collection);
+            /*            
+            console.log("postgate");
+            console.log(eventdata);
+            const post_url = "https://bsky.app/profile/" + eventdata.did + "/post/" + eventdata.commit.rkey;
+            console.log(post_url);
+            */
+            // https://atproto.blue/en/latest/atproto/atproto_client.models.app.bsky.feed.postgate.html
             break;
-        
+        }
+        case "app.bsky.feed.threadgate":{
+            /*
+            console.log("threadgate");
+            console.log(eventdata);
+            console.log("allow:" + JSON.stringify(eventdata.commit.record.allow));
+            const post_url = "https://bsky.app/profile/" + eventdata.did + "/post/" + eventdata.commit.rkey;
+            console.log(post_url);
+            */
+            // [] = no replies allowed
+            // https://atproto.blue/en/latest/atproto/atproto_client.models.app.bsky.feed.threadgate.html
+            break
+        }
+        default:{
+            console.log("Other event: " + eventdata.commit.collection);
+            break;
         }
     }
 
@@ -520,7 +539,6 @@ app.get('/', async (req, res) => {
         post.comments = top_posts[i].comments;
         post.reposts = top_posts[i].reposts;
         post.likes = top_posts[i].likes;
-        post.postedAt = top_posts[i].postedAt;
         post.author = top_posts[i].author;
         post.engagement_score = top_posts[i].engagement_score;
         return post;
@@ -569,11 +587,11 @@ app.get('/hashtag', async (req, res) => {
 
     // get index of hashtag from dictionary
     const ht_index = hashtag_index_dictionary[ht_query];
-    
     console.log(ht_index);
 
     // get get hashtag post uri's from hashtag tierlist
     let hashtags = hashtag_tier[ht_index].uri_list;
+    hashtags = hashtags.filter(hashtag => { return !(hashtag in deleted_post_dids) } )
 
     console.log(hashtags);
     
@@ -592,11 +610,6 @@ app.get('/hashtag', async (req, res) => {
     })
     posts = hashtags.map(hashtag_uri => post_data_lookup[hashtag_uri]).filter(doc => doc != undefined);
 
-    // hack postedAt data into post results
-    posts.map(post=>{
-        post.postedAt = 0;
-    })
-
     // get top hashtags
     const top_hashtags = hashtag_tier.slice(0,100);
 
@@ -604,8 +617,9 @@ app.get('/hashtag', async (req, res) => {
 
     console.log("Responding");
 
-    res.render("pages/index",
+    res.render("pages/hashtag",
         {
+            ht_query,
             posts,
             top_hashtags,
             n_posts_received,
