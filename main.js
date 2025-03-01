@@ -22,9 +22,9 @@ const ws = new ReconnectingWebSocket.ReconnectingWebSocket(`wss://jetstream1.us-
 
 const label_filters = ['Adult', 'porn', 'sexual', 'graphic-media', 'nudity', 'Nsfw', 'nsfw']
 
-await helper.init_db();
-const db = helper.get_db();
-const post_collection = db.collection("posts");
+//await helper.init_db();
+//const db = helper.get_db();
+//const post_collection = db.collection("posts");
 
 var n_posts_received = 0;
 var db_insertions = 0;
@@ -128,6 +128,7 @@ function HandlePost(eventdata){
     post_index_dictionary[uri] = post_tier.length;
 
     post_tier.push({
+        post,
         uri,
         did: eventdata.did,
         post_url,
@@ -143,6 +144,7 @@ function HandlePost(eventdata){
         movement_direction: 0
     });
 
+    /*
     post_collection.updateOne(
         { _id: uri },
         { $set: post },
@@ -156,6 +158,7 @@ function HandlePost(eventdata){
         console.log(uri);
         console.log(post);
     });
+    */
 
     post_serial_id++;
     n_posts_received++;
@@ -397,7 +400,9 @@ async function UpdateTopList(){
 
         DeleteOldPosts();
 
-        var posts = post_tier.slice(0,MAX_POSTS);
+        //var posts = post_tier.slice(0,MAX_POSTS);
+
+        /*
         let post_uris = posts.map( post => { return post.uri } );
         
         // return post data from mongodb
@@ -416,6 +421,9 @@ async function UpdateTopList(){
 
         // update list of top post items from mongo by order of id in original list
         current_top_posts = post_uris.map(post_uri => post_data_lookup[post_uri]).filter(doc => doc != undefined);
+        */
+
+        current_top_posts = post_tier.slice(0, MAX_POSTS);
 
         // get usernames from post DID for top posts
         for(let i = 0; i < MAX_POSTS; i++){
@@ -587,11 +595,11 @@ app.get('/', async (req, res) => {
     
     console.log("Num posts: " + post_tier.length);
     
-    const top_posts = post_tier.slice(0, 100);
+    //const top_posts = post_tier.slice(0, 100);
     
-    console.log(top_posts.length);
     console.log(current_top_posts.length);
-    
+
+    /*
     let ctp = current_top_posts.map( (post, i) => {
         post.comments = top_posts[i].comments;
         post.reposts = top_posts[i].reposts;
@@ -600,7 +608,8 @@ app.get('/', async (req, res) => {
         post.engagement_score = top_posts[i].engagement_score;
         return post;
     });
-    
+    */
+
     console.log("Num hashtags: " + hashtag_tier.length);
 
     const top_hashtags = hashtag_tier.slice(0,100);
@@ -611,7 +620,7 @@ app.get('/', async (req, res) => {
 
     res.render("pages/index",
         {
-            posts: ctp,
+            posts: current_top_posts,
             top_hashtags,
             n_posts_received,
             n_posts_total,
@@ -653,8 +662,7 @@ app.get('/hashtag', async (req, res) => {
         return !(hashtag in deleted_post_dids)
     } )
 
-    console.log(hashtag_uris);
-    
+    /*
     // return post data from mongodb by uri
     const post_data_query_results = await post_collection.find(
         {
@@ -662,6 +670,7 @@ app.get('/hashtag', async (req, res) => {
         }
     );
     let posts = await post_data_query_results.toArray();
+    */
 
     // sort posts by uri's in hashtag list
     let post_data_lookup = {};

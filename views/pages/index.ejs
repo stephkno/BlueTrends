@@ -103,7 +103,7 @@
 
                             <!--Post json hover (debug)-->
                             <!--<div title="<%=post.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
-                            <div title="<%=JSON.stringify(post.engagement_score, null, 2)%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <div title="<%=JSON.stringify(post, null, 2)%>" class="well<% if(post.nsfw){%> adult <%} %>">
          
                                 <!--NSFW Content warning-->
                                 <% if(post.nsfw){ %>
@@ -115,8 +115,8 @@
                                 <br>
 
                                 <!--Main post text-->
-                                <% if(post.text!=""){ %>
-                                    <div><h5><%- post.text %></h5></div>
+                                <% if(post.post.text!=""){ %>
+                                    <div><h5><%- post.post.text %></h5></div>
                                     <br>
                                 <% } %>
                                 
@@ -126,18 +126,18 @@
                                 /
                                 bafkreihburn4cuhyk7mnggvwjkztsmwl7uattvfmo6clxudrdtyw7bt6tq@jpeg
                                 -->
-
+                                
                                 <!--Handle image items in post-->
-                                <% if(post.embed && post.embed.images && post.embed.images.length > 0){ %>
+                                <% if(post.post.embed && post.post.embed.images && post.post.embed.images.length > 0){ %>
                                     
                                     <div class="well">
 
-                                        <p>[<%- post.embed.images.length  %> image<% if(post.embed.images.length>1){%>s<%}%>]</p>
+                                        <p>[<%- post.post.embed.images.length  %> image<% if(post.post.embed.images.length>1){%>s<%}%>]</p>
 
                                     <!--Handle image description items in post-->
-                                    <% if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
+                                    <% if(post.post.embed && post.post.embed.images && post.post.embed.images.length > 0 && post.post.embed.images[0].alt != ""){ %>
 
-                                            <p>(<%- post.embed.images[0].alt %>)</p>
+                                            <p>(<%- post.post.embed.images[0].alt %>)</p>
                                             
                                     <!--Handle video description in post-->
                                     <% } %>

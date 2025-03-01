@@ -2,6 +2,7 @@ import axios from 'axios';
 import mongo from 'mongodb';
 
 import { post_index_dictionary, post_tier, deleted_post_dids } from "./data.js";
+const MONGO_ADDRESS = "";
 
 export {
     get_current_timestamp,
@@ -114,8 +115,8 @@ function calculateHashtagEngagementScore(hashtag, idx) {
     return d_score;
 }
 
-const mongo_uri = "mongodb://localhost:27017?connectTimeoutMS=6000000";
-const mongo_client = new mongo.MongoClient(mongo_uri);
+const mongo_uri = `mongodb://${MONGO_ADDRESS}:27017?connectTimeoutMS=60000`;
+//const mongo_client = new mongo.MongoClient(mongo_uri);
 
 async function init_db(){
     await mongo_client.connect();
