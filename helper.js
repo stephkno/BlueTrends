@@ -1,5 +1,5 @@
 import axios from 'axios';
-import mongo from 'mongodb';
+//import mongo from 'mongodb';
 
 import { post_index_dictionary, post_tier, deleted_post_dids } from "./data.js";
 const MONGO_ADDRESS = "";
