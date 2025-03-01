@@ -80,18 +80,31 @@ function HandlePost(eventdata){
 
     // remove mysterious empty key item from post json
     delete post[''];
-
+/*
     post._id = uri;
     post.did = eventdata.did;
     post.postedAt = eventdata.time_us;
     post.post_url = post_url;
     post.deleted = false;
     post.nsfw = false;
+*/
 
-    post.labels = (eventdata.commit.record.labels &&
-         eventdata.commit.record.labels.length>0) 
-         ? eventdata.commit.record.labels.values.map(value => { return value.val }) 
-         : [];
+    // save labels to post tier data
+    if(!eventdata.commit.record.labels){
+        post.labels = [];
+    }else{
+        
+        //console.log(eventdata.commit.record.labels);
+        
+        if(eventdata.commit.record.labels.length == 0){
+            post.labels = [];
+        }else{
+            post.labels = eventdata.commit.record.labels.values.map(label => {
+                return label.val;
+            });
+        }
+
+    }
 
     post.labels.forEach(label =>{
 
@@ -127,8 +140,11 @@ function HandlePost(eventdata){
     
     post_index_dictionary[uri] = post_tier.length;
 
-    post_tier.push({
-        post,
+    let newpost = {
+        text: post.text,
+        embed: post.embed,
+        langs: post.langs,
+        labels: post.labels,
         uri,
         did: eventdata.did,
         post_url,
@@ -140,9 +156,13 @@ function HandlePost(eventdata){
         comments: 0,
         quote,
         is_comment,
+        deleted: false,
+        nsfw: false,
         engagement_score: 0,
         movement_direction: 0
-    });
+    };
+
+    post_tier.push(newpost);
 
     /*
     post_collection.updateOne(
@@ -297,6 +317,26 @@ function UpdatePost(eventdata){
     console.log(post_tier[idx]);
     post_tier[idx].nsfw = post.nsfw;
     
+}
+
+function HandleDelete(eventdata){
+
+    const uri = 
+    "at://" 
+    + eventdata.did
+    + "/" 
+    + eventdata.commit.collection 
+    + "/"
+    + eventdata.commit.rkey;
+    
+    // skip if post does not exist yet
+    if(!(uri in post_index_dictionary)){
+        return;
+    }
+
+    const idx = post_index_dictionary[uri];
+    post_tier[idx].engagement_score = -1;
+
 }
 
 function DeleteOldPosts(){
@@ -500,6 +540,8 @@ ws.onmessage = async function(event){
             post_tier[post_id].engagement_score = -1;
         }
 
+        HandleDelete(eventdata);
+
         return;
     }
     
@@ -670,7 +712,6 @@ app.get('/hashtag', async (req, res) => {
         }
     );
     let posts = await post_data_query_results.toArray();
-    */
 
     // sort posts by uri's in hashtag list
     let post_data_lookup = {};
@@ -678,6 +719,7 @@ app.get('/hashtag', async (req, res) => {
         post_data_lookup[post._id] = post;
     })
     posts = hashtag_uris.map(hashtag_uri => post_data_lookup[hashtag_uri]).filter(doc => doc != undefined);
+    */
 
     // get top hashtags
     const top_hashtags = hashtag_tier.slice(0,100);

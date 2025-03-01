@@ -115,8 +115,8 @@
                                 <br>
 
                                 <!--Main post text-->
-                                <% if(post.post.text!=""){ %>
-                                    <div><h5><%- post.post.text %></h5></div>
+                                <% if(post.text!=""){ %>
+                                    <div><h5><%- post.text %></h5></div>
                                     <br>
                                 <% } %>
                                 
@@ -128,16 +128,16 @@
                                 -->
                                 
                                 <!--Handle image items in post-->
-                                <% if(post.post.embed && post.post.embed.images && post.post.embed.images.length > 0){ %>
+                                <% if(post.embed && post.embed.images && post.embed.images.length > 0){ %>
                                     
                                     <div class="well">
 
-                                        <p>[<%- post.post.embed.images.length  %> image<% if(post.post.embed.images.length>1){%>s<%}%>]</p>
+                                        <p>[<%- post.embed.images.length  %> image<% if(post.embed.images.length>1){%>s<%}%>]</p>
 
                                     <!--Handle image description items in post-->
-                                    <% if(post.post.embed && post.post.embed.images && post.post.embed.images.length > 0 && post.post.embed.images[0].alt != ""){ %>
+                                    <% if(post.embed && post.embed.images && post.embed.images.length > 0 && post.embed.images[0].alt != ""){ %>
 
-                                            <p>(<%- post.post.embed.images[0].alt %>)</p>
+                                            <p>(<%- post.embed.images[0].alt %>)</p>
                                             
                                     <!--Handle video description in post-->
                                     <% } %>
@@ -258,7 +258,8 @@
                             <h4>Hashtags</h4>
                             <% let h = 1 %>
                             <% top_hashtags.forEach(function(hashtag) { %>
-                                <h5 id="hashtag"><%- h++ %>: <a title="<%-hashtag.engagement_score%>" href="/hashtag?t=<%- hashtag.text.slice(1) %>"><%- hashtag.text %></a></h5>
+                                <!--<h5 id="hashtag"><%- h++ %>: <a title="<%-hashtag.engagement_score%>" href="/hashtag?t=<%- hashtag.text.slice(1) %>"><%- hashtag.text %></a></h5>-->
+                                <h5 id="hashtag"><%- h++ %>:<%-hashtag.text %></h5>
                             <% }); %>
                         </div>
 
