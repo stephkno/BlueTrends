@@ -103,7 +103,7 @@
 
                             <!--Post json hover (debug)-->
                             <!--<div title="<%=post.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
-                            <div title="<%=JSON.stringify(post.labels, null, 2)%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <div title="<%=JSON.stringify(post.nsfw, null, 2)%>" class="well<% if(post.nsfw){%> adult <%} %>">
          
                                 <!--NSFW Content warning-->
                                 <% if(post.nsfw){ %>
@@ -251,7 +251,7 @@
                             <h4>Hashtags</h4>
                             <% let h = 1 %>
                             <% top_hashtags.forEach(function(hashtag) { %>
-                                <h5 id="hashtag"><%- h++ %>: <a title="<%-hashtag.uri_list%>" href="/hashtag?t=<%- hashtag.text.slice(1) %>"><%- hashtag.text %></a></h5>
+                                <h5 id="hashtag"><%- h++ %>: <a title="<%-hashtag.engagement_score%>" href="/hashtag?t=<%- hashtag.text.slice(1) %>"><%- hashtag.text %></a></h5>
                             <% }); %>
                         </div>
 

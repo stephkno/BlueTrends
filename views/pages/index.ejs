@@ -22,7 +22,7 @@
     <style>
 
         .adult {
-            display: none;
+            /*display: none;*/
         }
         #hashtag{
             overflow: hidden;
@@ -103,7 +103,7 @@
 
                             <!--Post json hover (debug)-->
                             <!--<div title="<%=post.engagement_score%>" class="well<% if(post.nsfw){%> adult <%} %>">-->
-                            <div title="<%=JSON.stringify(post, null, '')%>" class="well<% if(post.nsfw){%> adult <%} %>">
+                            <div title="<%=JSON.stringify(post.engagement_score, null, 2)%>" class="well<% if(post.nsfw){%> adult <%} %>">
          
                                 <!--NSFW Content warning-->
                                 <% if(post.nsfw){ %>
@@ -249,14 +249,14 @@
                         
                         <div class="well">
                             <input class="switch" type="checkbox" checked data-toggle="toggle" data-on="Light" data-off="Dark" onchange="Darkmode(this)">
-                            <input class="switch" type="checkbox" data-toggle="toggle" data-on="NSFW" data-off="NSFW" onchange="HideshowAdultContent(this)">
+                            <!--<input class="switch" type="checkbox" data-toggle="toggle" data-on="NSFW" data-off="NSFW" onchange="HideshowAdultContent(this)">-->
                         </div>
 
                         <div title="<%= JSON.stringify(top_hashtags) %>" class="well">
                             <h4>Hashtags</h4>
                             <% let h = 1 %>
                             <% top_hashtags.forEach(function(hashtag) { %>
-                                <h5 id="hashtag"><%- h++ %>: <a title="<%-hashtag.uri_list%>" href="/hashtag?t=<%- hashtag.text.slice(1) %>"><%- hashtag.text %></a></h5>
+                                <h5 id="hashtag"><%- h++ %>: <a title="<%-hashtag.engagement_score%>" href="/hashtag?t=<%- hashtag.text.slice(1) %>"><%- hashtag.text %></a></h5>
                             <% }); %>
                         </div>
 

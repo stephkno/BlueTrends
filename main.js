@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import ReconnectingWebSocket from 'rws';
 
 import * as helper from './helper.js';
-import { post_index_dictionary, post_tier, deleted_post_dids, hashtag_index_dictionary, hashtag_tier, deleted_hashtag_dids } from "./data.js";
+import { post_index_dictionary, post_tier, deleted_post_dids, hashtag_index_dictionary, hashtag_tier, deleted_hashtags } from "./data.js";
 
 const app = express();
 const port = 8080;
@@ -17,7 +17,9 @@ const dec = new zstd.Decompressor();
 dec.setParameters({windowLogMax: 24});
 dec.loadDictionary(fs.readFileSync('./data/zstd_dictionary'));
 
-const ws = new ReconnectingWebSocket.ReconnectingWebSocket(`wss://jetstream1.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.*&compress=true`, {});
+//const ws = new ReconnectingWebSocket.ReconnectingWebSocket(`wss://jetstream1.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.*&compress=true`, {});
+const ws = new ReconnectingWebSocket.ReconnectingWebSocket(`wss://jetstream1.us-west.bsky.network/subscribe?compress=true`, {});
+
 const label_filters = ['Adult', 'porn', 'sexual', 'graphic-media', 'nudity', 'Nsfw', 'nsfw']
 
 await helper.init_db();
@@ -86,7 +88,10 @@ function HandlePost(eventdata){
     post.deleted = false;
     post.nsfw = false;
 
-    post.labels = eventdata.commit.record.labels ? eventdata.commit.record.labels.values.map(value => { return value.val }) : [];
+    post.labels = (eventdata.commit.record.labels &&
+         eventdata.commit.record.labels.length>0) 
+         ? eventdata.commit.record.labels.values.map(value => { return value.val }) 
+         : [];
 
     post.labels.forEach(label =>{
 
@@ -237,6 +242,60 @@ function HandleRepost(eventdata){
     
 }
 
+function UpdatePost(eventdata){
+
+    const uri = 
+    "at://" 
+    + eventdata.did
+    + "/" 
+    + eventdata.commit.collection 
+    + "/"
+    + eventdata.commit.rkey;
+
+    const post_url = "https://bsky.app/profile/" + eventdata.did + "/post/" + eventdata.commit.rkey;
+
+    // bsky url format:
+    // http://www.bsky.app/<DID>/commit/<RKEY>
+
+    const size = Buffer.byteLength(JSON.stringify(eventdata))
+
+    var post = eventdata.commit.record;
+
+    // remove mysterious empty key item from post json
+    delete post[''];
+
+    post.labels = eventdata.commit.record.labels ? eventdata.commit.record.labels.values.map(value => { return value.val }) : [];
+
+    // check if post update contains labels
+    post.labels.forEach(label =>{
+
+        // check if filter list contains first label value
+        if(label_filters.includes(label)){
+            post.nsfw = true;
+        }else{
+            //console.log("Unrecognized filter");
+            //console.log(eventdata.commit.record.labels);
+        }
+
+    })
+    
+    // skip if post does not exist yet
+    if(!(uri in post_index_dictionary)){
+        return;
+    }
+
+    // get post index
+    const idx = post_index_dictionary[uri];
+
+    // update post with new label
+    console.log("Updating post!");
+    console.log(uri);
+    console.log(idx);
+    console.log(post_tier[idx]);
+    post_tier[idx].nsfw = post.nsfw;
+    
+}
+
 function DeleteOldPosts(){
 
     let n_posts_removed = 0;
@@ -277,13 +336,13 @@ function DeleteOldPosts(){
         const i = hashtag_tier.length-1;
 
         // remove last post from post_tier
-        let deleted_hashtag = hashtag_tier.pop();
+        let deleted_hashtag_idx = hashtag_tier.pop();
 
-        // add deleted post did to dictionary
-        deleted_hashtag_dids[deleted_hashtag] = 0;
+        // add deleted tag's post did to dictionary
+        deleted_hashtags[deleted_hashtag_idx] = 0;
 
         // remove post index from dictionary
-        delete hashtag_index_dictionary[deleted_hashtag];
+        delete hashtag_index_dictionary[deleted_hashtag_idx];
         
         // remove post from main mongodb collection
         // todo
@@ -409,14 +468,13 @@ ws.onmessage = async function(event){
 
     const eventdata = JSON.parse(event.data);
     
-    if(eventdata.kind == "identity" || eventdata.kind == "account"){
+    if(eventdata.kind != "commit"){
         return;
     }
 
-    if(!eventdata.commit){
-        console.log("No commit");
-        console.log(eventdata);
-        return;
+        // looking for any kind of update label event for nsfw content
+    if(eventdata.commit.operation=="update" && eventdata.commit.collection == "app.bsky.feed.post"){
+        UpdatePost(eventdata);
     }
 
     if(eventdata.commit.operation == "delete"){
@@ -490,7 +548,7 @@ ws.onmessage = async function(event){
             break
         }
         default:{
-            console.log("Other event: " + eventdata.commit.collection);
+            //console.log("Other event: " + eventdata.commit.collection);
             break;
         }
     }
@@ -535,7 +593,6 @@ app.get('/', async (req, res) => {
     console.log(current_top_posts.length);
     
     let ctp = current_top_posts.map( (post, i) => {
-        console.log("post: \n" + post);
         post.comments = top_posts[i].comments;
         post.reposts = top_posts[i].reposts;
         post.likes = top_posts[i].likes;
@@ -590,15 +647,18 @@ app.get('/hashtag', async (req, res) => {
     console.log(ht_index);
 
     // get get hashtag post uri's from hashtag tierlist
-    let hashtags = hashtag_tier[ht_index].uri_list;
-    hashtags = hashtags.filter(hashtag => { return !(hashtag in deleted_post_dids) } )
+    let hashtag_uris = hashtag_tier[ht_index].uri_list;
 
-    console.log(hashtags);
+    hashtag_uris = hashtag_uris.filter(hashtag => {
+        return !(hashtag in deleted_post_dids)
+    } )
+
+    console.log(hashtag_uris);
     
     // return post data from mongodb by uri
     const post_data_query_results = await post_collection.find(
         {
-            _id: { $in: hashtags }
+            _id: { $in: hashtag_uris }
         }
     );
     let posts = await post_data_query_results.toArray();
@@ -608,7 +668,7 @@ app.get('/hashtag', async (req, res) => {
     posts.map(post => {
         post_data_lookup[post._id] = post;
     })
-    posts = hashtags.map(hashtag_uri => post_data_lookup[hashtag_uri]).filter(doc => doc != undefined);
+    posts = hashtag_uris.map(hashtag_uri => post_data_lookup[hashtag_uri]).filter(doc => doc != undefined);
 
     // get top hashtags
     const top_hashtags = hashtag_tier.slice(0,100);
@@ -647,7 +707,8 @@ process.on('SIGTERM', cleanup);
 
 server_start_time = Date.now();
 
+const real_port = process.env.PORT || port;
 // Start the express server
-app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+app.listen(real_port, () => {
+    console.log(`Server is running on http://localhost:${real_port}`);
 });
